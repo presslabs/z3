@@ -30,8 +30,10 @@ def sample_data():
 
 def test_multipart_upload(sample_data):
     uploader = Uploader('presslabstest', cfg['S3_KEY_ID'], cfg['S3_SECRET'])
-    uploader.begin_upload("z3_test_"+datetime.now().strftime("%Y%m%d_%H-%M-%S"))
+    key_name = "z3_test_"+datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    uploader.begin_upload(key_name)
     index = 1
+    digests = []
     while True:
         chunk = sample_data.read(5 * 1024 * 1024)
         print "read {} KB".format(len(chunk) / 1024.0)
@@ -40,11 +42,15 @@ def test_multipart_upload(sample_data):
         # since this is a stringIO there's no way this can return less than 512 bytes
         # unless we're at the end of the stream
         print "uploading chunk", index
-        uploader.upload_part(
+        part = uploader.upload_part(
             uploader.bucket,
             uploader.multipart.id,
             uploader.multipart.key_name,
             chunk,
             index)
+        digests.append(part.md5)
         index += 1
     uploader.finish_upload()
+    expected_etag = uploader.multipart_etag(digests)
+    actual_etag = uploader.bucket.get_key(key_name).etag
+    assert expected_etag == actual_etag

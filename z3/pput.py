@@ -4,7 +4,8 @@ usage
 pput bucket_name/filename
 """
 
-
+import binascii
+import hashlib
 from cStringIO import StringIO
 
 import boto
@@ -47,6 +48,21 @@ class Uploader(object):
         part.id = part_id
         part.key_name = key_name
         return part.upload_part_from_file(StringIO(chunk), index, replace=True)
+
+    @staticmethod
+    def multipart_etag(digests):
+        """
+        Computes etag for multipart uploads
+        :type digests: list of hex-encoded md5 sums (string)
+        :param digests: The list of digests for each individual chunk.
+
+        :rtype: string
+        :returns: The etag computed from the individual chunks.
+        """
+        etag = hashlib.md5()
+        for dig in digests:
+            etag.update(binascii.a2b_hex(dig))
+        return '"{}-{}"'.format(etag.hexdigest(), len(digests))
 
     def finish_upload(self):
         return self.multipart.complete_upload()
