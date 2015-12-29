@@ -1,0 +1,5 @@
+*.pyc
+*~
+.cache
+*.egg-info
+*_local.cfg
