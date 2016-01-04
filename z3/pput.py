@@ -148,6 +148,7 @@ class UploadSupervisor(object):
             self.name,
             headers={
                 "x-amz-acl": "bucket-owner-full-control",
+                "x-amz-storage-class": 'STANDARD_IA',
             }
         )
 
