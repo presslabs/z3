@@ -111,7 +111,7 @@ def test_supervisor_loop(sample_data):
 def test_integration(sample_data):
     stream_handler = StreamHandler(sample_data)
     bucket = boto.connect_s3(
-        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket('presslabstest')
+        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
     key_name = "z3_test_" + datetime.now().strftime("%Y%m%d_%H-%M-%S")
     sup = UploadSupervisor(stream_handler, key_name, bucket=bucket)
     etag = sup.main_loop()

@@ -13,7 +13,6 @@ class OnionDict(object):
         self.__dictionaries = args
 
     def __getitem__(self, key):
-        key = key.lower()
         for d in self.__dictionaries:
             if key in d:
                 return d[key]
@@ -43,6 +42,7 @@ def get_config():
         if local_settings:
             _config.read(local_settings)
         _settings = OnionDict(
-            dict((k, v) for k, v in _config.items("main")),
-            os.environ)
+            os.environ,
+            dict((k.upper(), v) for k, v in _config.items("main"))
+        )
     return _settings
