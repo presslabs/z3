@@ -4,17 +4,20 @@ usage
 pput bucket_name/filename
 """
 
-import binascii
-import hashlib
-import functools
-from collections import namedtuple
-from cStringIO import StringIO
 from Queue import Queue
+from cStringIO import StringIO
+from collections import namedtuple
 from logging import getLogger
 from threading import Thread
+import argparse
+import binascii
+import functools
+import hashlib
+import json
+import os
+import sys
 
 import boto.s3.multipart
-
 
 from z3.config import get_config
 
@@ -43,7 +46,7 @@ def multipart_etag(digests):
 class StreamHandler(object):
     def __init__(self, input_stream, chunk_size=5*1024*1024):
         self.input_stream = input_stream
-        self.chunk_size = chunk_size
+        self.chunk_size = self._parse_chunksize(chunk_size)
         self._partial_chunk = ""
         self._eof_reached = False
 
@@ -62,6 +65,20 @@ class StreamHandler(object):
                 chunk = self._partial_chunk
                 self._partial_chunk = ""
                 return chunk
+
+    @staticmethod
+    def _parse_chunksize(size):
+        if isinstance(size, (int, long)):
+            return size
+        size = size.strip().upper()
+        last = size[-1]
+        if last == 'G':
+            return int(size[:-1]) * 1024 * 1024 * 1024
+        if last == 'M':
+            return int(size[:-1]) * 1024 * 1024
+        if last == 'K':
+            return int(size[:-1]) * 1024
+        return int(size)
 
 
 @functools.wraps
@@ -116,7 +133,7 @@ class UploadWorker(object):
 class UploadSupervisor(object):
     '''Reads chunks and dispatches them to UploadWorkers'''
 
-    def __init__(self, stream_handler, name, bucket):
+    def __init__(self, stream_handler, name, bucket, quiet=True):
         self.stream_handler = stream_handler
         self.name = name
         self.bucket = bucket
@@ -125,6 +142,7 @@ class UploadSupervisor(object):
         self.multipart = None
         self.results = []  # beware s3 multipart indexes are 1 based
         self._pending_chunks = 0
+        self._quiet = quiet
 
     def _start_workers(self, concurrency, worker_class):
         work_queue = Queue(maxsize=concurrency)
@@ -160,6 +178,8 @@ class UploadSupervisor(object):
         """
         result = self.inbox.get()
         if result.success:
+            if not self._quiet:
+                sys.stderr.write("uploaded chunk {} \n".format(result.index))
             self.results.append((result.index, result.md5))
             self._pending_chunks -= 1
         else:
@@ -198,3 +218,49 @@ class UploadSupervisor(object):
         self._finish_upload()
         self.results.sort()
         return multipart_etag(r[1] for r in self.results)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Read data from stdin and upload it to s3',
+        epilog=('All optional args have a configurable default. '
+                'Order of precedence is command line args then '
+                'environment variables then user config ~/.z3.cfg'
+                ' then default config.'),
+    )
+    parser.add_argument('name', help='name of S3 key')
+    parser.add_argument('-s', '--chunk-size',
+                        dest='chunk_size',
+                        default=CFG['CHUNK_SIZE'],
+                        help='multipart chunk size, eg: 10M, 1G')
+    parser.add_argument('--file-descriptor',
+                        dest='file_descriptor',
+                        type=int,
+                        help=('read data from this fd instead of stdin; '
+                              'useful if you want an [i]pdb session to use stdin\n'
+                              '`pput --file-descriptor 3 3<./file`'))
+    parser.add_argument('--concurrency',
+                        dest='concurrency',
+                        type=int,
+                        default=int(CFG['CONCURRENCY']),
+                        help='number of worker threads to use')
+    parser.add_argument('--quiet',
+                        dest='quiet',
+                        action='store_true',
+                        help=('suppress progress report'))
+    args = parser.parse_args()
+
+    input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
+    stream_handler = StreamHandler(input_fd, chunk_size=args.chunk_size)
+    bucket = boto.connect_s3(
+        CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
+    sup = UploadSupervisor(stream_handler, args.name, bucket=bucket, quiet=args.quiet)
+    if not args.quiet:
+        sys.stderr.write("starting upload to {}/{} with chunksize {} using {} workers\n".format(
+            CFG['BUCKET'], args.name, args.chunk_size, args.concurrency))
+    etag = sup.main_loop(concurrency=args.concurrency)
+    print json.dumps({'status': 'success', 'etag': etag})
+
+
+if __name__ == '__main__':
+    main()
