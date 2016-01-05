@@ -1,42 +1,17 @@
 from cStringIO import StringIO
-from datetime import datetime
 from Queue import Queue
 from uuid import uuid4
 import hashlib
 
-import boto
 import pytest
 
 from z3.pput import (UploadSupervisor, UploadWorker, StreamHandler,
                      Result, WorkerCrashed, multipart_etag)
 from z3.config import get_config
+from .fixtures import sample_data
 
 
 cfg = get_config()
-_cached_sample_data = None
-
-
-@pytest.fixture()
-def sample_data():
-    """Sets up a StringIO with 6 Mbytes of data"""
-    global _cached_sample_data
-    if _cached_sample_data is None:
-        data = StringIO()
-        chars = "".join(chr(i) for i in xrange(256))
-        for count in xrange(6):
-            cc = chr(count)
-            for _ in xrange(2 * 1024):
-                # each iteration adds 1MB
-                # each 1MB chunk is made up of an alternation of the block's index (zero based)
-                # and an incrementing counter (overflows to 0 several times)
-                # the first block will be: 00 00 00 01 00 02 ... 00 ff 00 00 ... 00 ff
-                data.write(
-                    "".join(cc+chars[i] for i in xrange(256))
-                )
-        print "wrote {} MB" .format(data.tell() / 1024.0 / 1024.0)
-        _cached_sample_data = data
-    _cached_sample_data.seek(0)
-    return _cached_sample_data
 
 
 def test_multipart_etag(sample_data):
@@ -121,13 +96,3 @@ def test_supervisor_loop_with_worker_crash(sample_data):
     sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
     with pytest.raises(WorkerCrashed):
         sup.main_loop(worker_class=ErrorWorker)
-
-
-def test_integration(sample_data):
-    stream_handler = StreamHandler(sample_data)
-    bucket = boto.connect_s3(
-        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
-    key_name = "z3_test_" + datetime.now().strftime("%Y%m%d_%H-%M-%S")
-    sup = UploadSupervisor(stream_handler, key_name, bucket=bucket)
-    etag = sup.main_loop()
-    assert etag == '"d229c1fc0e509475afe56426c89d2724-2"'
