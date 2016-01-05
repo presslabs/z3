@@ -8,7 +8,7 @@ import boto
 import pytest
 
 from z3.pput import (UploadSupervisor, UploadWorker, StreamHandler,
-                     Result, multipart_etag)
+                     Result, WorkerCrashed, multipart_etag)
 from z3.config import get_config
 
 
@@ -106,6 +106,21 @@ def test_supervisor_loop(sample_data):
     etag = sup.main_loop(worker_class=DummyWorker)
     assert etag == '"d229c1fc0e509475afe56426c89d2724-2"'
     assert bucket._multipart._completed
+
+
+class ErrorWorker(UploadWorker):
+    def upload_part(self, index, chunk):
+        if index == 2:
+            raise Exception("Testing worker crash")
+        return hashlib.md5(chunk).hexdigest()
+
+
+def test_supervisor_loop_with_worker_crash(sample_data):
+    stream_handler = StreamHandler(sample_data)
+    bucket = FakeBucket()
+    sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
+    with pytest.raises(WorkerCrashed):
+        sup.main_loop(worker_class=ErrorWorker)
 
 
 def test_integration(sample_data):

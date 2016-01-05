@@ -94,6 +94,10 @@ def retry(func):
     return wrapped
 
 
+class WorkerCrashed(Exception):
+    pass
+
+
 class UploadWorker(object):
     def __init__(self, bucket, multipart, inbox, outbox):
         self.bucket = bucket
@@ -116,6 +120,9 @@ class UploadWorker(object):
         self._thread.daemon = True
         self._thread.start()
         return self
+
+    def is_alive(self):
+        return self._thread.is_alive()
 
     def main_loop(self):
         while True:
@@ -143,6 +150,7 @@ class UploadSupervisor(object):
         self.results = []  # beware s3 multipart indexes are 1 based
         self._pending_chunks = 0
         self._quiet = quiet
+        self._workers = None
 
     def _start_workers(self, concurrency, worker_class):
         work_queue = Queue(maxsize=concurrency)
@@ -201,11 +209,18 @@ class UploadSupervisor(object):
         self._pending_chunks += 1
         self.outbox.put((index, chunk))
 
+    def _check_workers(self):
+        """Check workers are alive, raise exception if any is dead."""
+        for worker in self._workers:
+            if not worker.is_alive():
+                raise WorkerCrashed()
+
     def main_loop(self, concurrency=4, worker_class=UploadWorker):
         chunk_index = 0
         self._begin_upload()
-        self._start_workers(concurrency, worker_class=worker_class)
+        self._workers = self._start_workers(concurrency, worker_class=worker_class)
         while self._pending_chunks or not self.stream_handler.finished:
+            self._check_workers()  # raise exception and stop everything if any worker has crashed
             # print "main_loop p:{} o:{} i:{}".format(
             #     self._pending_chunks, self.outbox.qsize(), self.inbox.qsize())
             # consume results first as this is a quick operation
