@@ -140,7 +140,7 @@ class UploadWorker(object):
 class UploadSupervisor(object):
     '''Reads chunks and dispatches them to UploadWorkers'''
 
-    def __init__(self, stream_handler, name, bucket, quiet=True):
+    def __init__(self, stream_handler, name, bucket, headers=None, quiet=True):
         self.stream_handler = stream_handler
         self.name = name
         self.bucket = bucket
@@ -151,6 +151,7 @@ class UploadSupervisor(object):
         self._pending_chunks = 0
         self._quiet = quiet
         self._workers = None
+        self._headers = headers
 
     def _start_workers(self, concurrency, worker_class):
         work_queue = Queue(maxsize=concurrency)
@@ -170,13 +171,13 @@ class UploadSupervisor(object):
     def _begin_upload(self):
         if self.multipart is not None:
             raise AssertionError("multipart upload already started")
-        self.multipart = self.bucket.initiate_multipart_upload(
-            self.name,
-            headers={
-                "x-amz-acl": "bucket-owner-full-control",
-                "x-amz-storage-class": 'STANDARD_IA',
-            }
-        )
+        headers = {
+            "x-amz-acl": "bucket-owner-full-control",
+            "x-amz-storage-class": 'STANDARD_IA',
+        }
+        if self._headers:
+            headers.update(self._headers)
+        self.multipart = self.bucket.initiate_multipart_upload(self.name, headers=headers)
 
     def _finish_upload(self):
         return self.multipart.complete_upload()
@@ -235,6 +236,19 @@ class UploadSupervisor(object):
         return multipart_etag(r[1] for r in self.results)
 
 
+def parse_metadata(metadata):
+    headers = {}
+    for meta in metadata:
+        try:
+            key, val = meta.split('=', 1)
+        except ValueError:
+            sys.stderr.write(
+                "malformed metadata '{}'; should be key=value\n".format(meta))
+            sys.exit(1)
+        headers['x-amz-meta-' + key] = val
+    return headers
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Read data from stdin and upload it to s3',
@@ -259,6 +273,11 @@ def main():
                         type=int,
                         default=int(CFG['CONCURRENCY']),
                         help='number of worker threads to use')
+    parser.add_argument('--metadata',
+                        action='append',
+                        dest='metadata',
+                        default=list(),
+                        help='Metatada in key=value format')
     parser.add_argument('--quiet',
                         dest='quiet',
                         action='store_true',
@@ -269,7 +288,13 @@ def main():
     stream_handler = StreamHandler(input_fd, chunk_size=args.chunk_size)
     bucket = boto.connect_s3(
         CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
-    sup = UploadSupervisor(stream_handler, args.name, bucket=bucket, quiet=args.quiet)
+    sup = UploadSupervisor(
+        stream_handler,
+        args.name,
+        bucket=bucket,
+        quiet=args.quiet,
+        headers=parse_metadata(args.metadata),
+    )
     if not args.quiet:
         sys.stderr.write("starting upload to {}/{} with chunksize {} using {} workers\n".format(
             CFG['BUCKET'], args.name, args.chunk_size, args.concurrency))
