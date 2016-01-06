@@ -13,28 +13,45 @@ class FakeKey(object):
 
 
 class FakeBucket(object):
-    def __init__(self):
-        self._keys = {
-            "snap_1": FakeKey('snap_1', {'is_full': 'true'}),
-            "snap_2": FakeKey('snap_2', {'parent': 'snap_1'}),
-            "snap_3": FakeKey('snap_3', {'parent': 'snap_2', 'is_full': 'false'}),
-            "snap_4": FakeKey('snap_4', {'parent': 'missing_parent'}),  # missing parent
-            "snap_5": FakeKey('snap_5', {'parent': 'snap_4'}),
-            "snap_6": FakeKey('snap_6', {'parent': 'snap_7'}),  # cycle
-            "snap_7": FakeKey('snap_7', {'parent': 'snap_6'}),  # cycle
-        }
+    fake_data = {
+        "snap_1": FakeKey('snap_1', {'is_full': 'true'}),
+        "snap_2": FakeKey('snap_2', {'parent': 'snap_1'}),
+        "snap_3": FakeKey('snap_3', {'parent': 'snap_2', 'is_full': 'false'}),
+        "snap_4": FakeKey('snap_4', {'parent': 'missing_parent'}),  # missing parent
+        "snap_5": FakeKey('snap_5', {'parent': 'snap_4'}),
+        "snap_6": FakeKey('snap_6', {'parent': 'snap_7'}),  # cycle
+        "snap_7": FakeKey('snap_7', {'parent': 'snap_6'}),  # cycle
+    }
 
     def list(self, *a, **kwa):
         # boto bucket.list gives you keys without metadata, let's emulate that
-        return (FakeKey("snap_{}".format(i)) for i in xrange(1, 8))
+        return (FakeKey(name) for name in self.fake_data.iterkeys())
 
     def get_key(self, name):
-        return self._keys.get(name)
+        return self.fake_data.get(name)
 
 
-@pytest.fixture
-def manager():
-    return SnapshotManager(FakeBucket())
+def s3_data():
+    cfg = get_config()
+    bucket = boto.connect_s3(
+        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
+    for fake_key in FakeBucket.fake_data.itervalues():
+        key = bucket.new_key(fake_key.name)
+        headers = {("x-amz-meta-" + k): v for k, v in fake_key.metadata.iteritems()}
+        key.set_contents_from_string("spam", headers=headers)
+    return bucket
+
+
+@pytest.fixture(
+    scope='module',
+    params=[
+        FakeBucket,
+        pytest.mark.with_s3(s3_data),
+    ],
+    ids=['fake_bucket', 'with_s3']
+)
+def manager(request):
+    return SnapshotManager(request.param(), prefix="snap_")
 
 
 def test_list_snapshots(manager):
@@ -65,10 +82,3 @@ def test_unhealthy_cycle(manager):
     snap = manager.get('snap_7')
     assert snap.is_full is False
     assert snap.is_healthy is False
-
-
-# def test_integration():
-#     cfg = get_config()
-#     bucket = boto.connect_s3(
-#         cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
-#     import ipdb; ipdb.set_trace()
