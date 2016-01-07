@@ -1,6 +1,6 @@
 ## z3/pput This is Work In Progress.
 
-[![Build Status](https://travis-ci.org/rciorba/z3.svg)](https://travis-ci.org/rciorba/z3)
+[![Build Status](https://travis-ci.org/PressLabs/z3.svg)](https://travis-ci.org/PressLabs/z3)
 
 Currently provides one tool pput (parallel put) for multipart uploading to s3.
 To be determined if we add the zfs snapshot handling logic.
