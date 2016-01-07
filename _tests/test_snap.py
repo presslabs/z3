@@ -76,9 +76,13 @@ def test_unhealthy_incremental(manager):
     snap = manager.get('snap_5')
     assert snap.is_full is False
     assert snap.is_healthy is False
+    assert snap.reason_broken == 'parent broken'
+    assert snap.parent.reason_broken == 'missing parent'
 
 
 def test_unhealthy_cycle(manager):
     snap = manager.get('snap_7')
     assert snap.is_full is False
     assert snap.is_healthy is False
+    assert snap.reason_broken == 'cycle detected'
+    assert snap.parent.reason_broken == 'cycle detected'

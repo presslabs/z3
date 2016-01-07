@@ -20,33 +20,59 @@ def cached(func):
 
 
 class Snapshot(object):
+    CYCLE = 'cycle detected'
+    MISSING_PARENT = 'missing parent'
+    PARENT_BROKEN = 'parent broken'
+
     def __init__(self, key, manager):
         self.name = key.key
         self.metadata = key.metadata
         self._mgr = manager
+        self._reason_broken = None
 
     def __repr__(self):
-        return "<Snapshot {}>".format(self.name)
+        if self.is_full:
+            return "<Snapshot {}/full>".format(self.name)
+        else:
+            parent = "/" + self.metadata.get("parent", "")
+            return "<Snapshot {}{}>".format(self.name, parent)
 
     @property
     def is_full(self):
         return self.metadata.get('is_full') == 'true'
+
+    @property
+    def parent(self):
+        parent_name = self.metadata.get('parent')
+        return self._mgr.get(parent_name)
 
     @cached
     def _is_healthy(self, visited=frozenset()):
         if self.is_full:
             return True
         if self in visited:
+            self._reason_broken = self.CYCLE
             return False  # we ended up with a cycle, abort
-        parent_name = self.metadata.get('parent')
-        parent = self._mgr.get(parent_name)
-        if parent is None:
+        if self.parent is None:
+            self._reason_broken = self.MISSING_PARENT
             return False  # missing parent
-        return parent._is_healthy(visited.union([self]))
+        if not self.parent._is_healthy(visited.union([self])):
+            if self.parent.reason_broken == self.CYCLE:
+                self._reason_broken = self.CYCLE
+            else:
+                self._reason_broken = self.PARENT_BROKEN
+            return False
+        return True
 
     @property
     def is_healthy(self):
         return self._is_healthy()
+
+    @property
+    def reason_broken(self):
+        if self.is_healthy:
+            return
+        return self._reason_broken
 
 
 class SnapshotManager(object):
@@ -70,10 +96,12 @@ class SnapshotManager(object):
 
 def list_snapshots(bucket, prefix):
     mgr = SnapshotManager(bucket, prefix)
+    fmt = "{:40} | {:15} | {:5}"
+    print fmt.format("NAME", "TYPE", "HEALTH")
     for snap in mgr.list():
         snap_type = 'full' if snap.is_full else 'incremental'
-        health = 'ok' if snap.is_healthy else 'INVALID!'
-        print snap, snap_type, health
+        health = snap.reason_broken or 'ok'
+        print fmt.format(snap, snap_type, health)
 
 
 def main():
