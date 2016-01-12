@@ -1,8 +1,10 @@
+import os.path
+
 import boto
 import pytest
 
 from z3.config import get_config
-from z3.snap import list_snapshots, SnapshotManager
+from z3.snap import list_snapshots, SnapshotManager, LocalZFS
 
 
 class FakeKey(object):
@@ -86,3 +88,66 @@ def test_unhealthy_cycle(manager):
     assert snap.is_healthy is False
     assert snap.reason_broken == 'cycle detected'
     assert snap.parent.reason_broken == 'cycle detected'
+
+
+class FakeZFS(LocalZFS):
+    def __init__(self, expected):
+        self._expected = expected
+
+    def _list_snapshots(self):
+        return self._expected
+        # import _tests
+        # with open(os.path.join(_tests.__path__[0], 'zfs_list.txt')) as fd:
+        #     return fd.read()
+
+def test_list_local_snapshots():
+    output = (
+        'pool@p1\t0\t19K\t-\t19K\n'
+        'pool@p2\t0\t19K\t-\t0\n'
+        'pool/fs@first\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@second\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@third\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs = FakeZFS(output)
+    expected = {
+        'pool': {
+            'p1': {
+                'mountpoint': '-',
+                'name': 'p1',
+                'refer': '19K',
+                'used': '0',
+                'written': '19K',
+            },
+            'p2': {
+                'mountpoint': '-',
+                'name': 'p2',
+                'refer': '19K',
+                'used': '0',
+                'written': '0',
+            },
+        },
+        'pool/fs': {
+            'first': {
+                'mountpoint': '-',
+                'name': 'first',
+                'refer': '10.0M',
+                'used': '10.0M',
+                'written': '10.0M',
+            },
+            'second': {
+                'mountpoint': '-',
+                'name': 'second',
+                'refer': '10.0M',
+                'used': '10.0M',
+                'written': '10.0M',
+            },
+            'third': {
+                'mountpoint': '-',
+                'name': 'third',
+                'refer': '10.0M',
+                'used': '10.0M',
+                'written': '10.0M'
+            }
+        }
+    }
+    assert zfs.list_snapshots() == expected

@@ -1,5 +1,6 @@
 import argparse
 import functools
+import logging
 
 import boto
 
@@ -75,9 +76,37 @@ class Snapshot(object):
         return self._reason_broken
 
 
+class LocalZFS(object):
+    def _list_snapshots(self):
+        return subprocess.check_output(
+            ['zfs', 'list', '-Ht', 'snap', '-o',
+             'name,used,refer,mountpoint,written'])
+
+    def list_snapshots(self):
+        try:
+            snap = self._list_snapshots()
+        except OSError as err:
+            logging.error("unable to list local snapshots!")
+            return []
+        vols = {}
+        for line in snap.splitlines():
+            name, used, refer, mountpoint, written = line.split('\t')
+            vol_name, snap_name = name.split('@', 1)
+            snapshots = vols.setdefault(vol_name, {})
+            snapshots[snap_name] = {
+                'name': snap_name,
+                'used': used,
+                'refer': refer,
+                'mountpoint': mountpoint,
+                'written': written,
+            }
+        return vols
+
+
 class SnapshotManager(object):
-    def __init__(self, bucket, prefix=""):
+    def __init__(self, bucket, local, prefix=""):
         self.bucket = bucket
+        self.local = local
         self._snapshots = self._get_snapshots(prefix=prefix)
 
     def _get_snapshots(self, prefix):
@@ -95,7 +124,7 @@ class SnapshotManager(object):
 
 
 def list_snapshots(bucket, prefix):
-    mgr = SnapshotManager(bucket, prefix)
+    mgr = SnapshotManager(bucket, LocalZFS(), prefix=prefix)
     fmt = "{:40} | {:15} | {:5}"
     print fmt.format("NAME", "TYPE", "HEALTH")
     for snap in mgr.list():
