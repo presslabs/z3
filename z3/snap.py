@@ -1,6 +1,8 @@
 import argparse
 import functools
 import logging
+import operator
+import subprocess
 
 import boto
 
@@ -25,9 +27,13 @@ class Snapshot(object):
     MISSING_PARENT = 'missing parent'
     PARENT_BROKEN = 'parent broken'
 
-    def __init__(self, key, manager):
+    MISSING_LOCALLY = 'missing locally'
+    OK_LOCALLY = 'OK'
+
+    def __init__(self, key, manager, local):
         self.name = key.key
         self.metadata = key.metadata
+        self.local = local
         self._mgr = manager
         self._reason_broken = None
 
@@ -75,6 +81,12 @@ class Snapshot(object):
             return
         return self._reason_broken
 
+    @property
+    def local_state(self):
+        if self.local is None:
+            return self.MISSING_LOCALLY
+        return self.OK_LOCALLY
+
 
 class LocalZFS(object):
     def _list_snapshots(self):
@@ -87,14 +99,14 @@ class LocalZFS(object):
             snap = self._list_snapshots()
         except OSError as err:
             logging.error("unable to list local snapshots!")
-            return []
+            return {}
         vols = {}
         for line in snap.splitlines():
             name, used, refer, mountpoint, written = line.split('\t')
             vol_name, snap_name = name.split('@', 1)
             snapshots = vols.setdefault(vol_name, {})
             snapshots[snap_name] = {
-                'name': snap_name,
+                'name': name,
                 'used': used,
                 'refer': refer,
                 'mountpoint': mountpoint,
@@ -106,18 +118,24 @@ class LocalZFS(object):
 class SnapshotManager(object):
     def __init__(self, bucket, local, prefix=""):
         self.bucket = bucket
-        self.local = local
+        self._local_snapshots = local.list_snapshots()
         self._snapshots = self._get_snapshots(prefix=prefix)
 
     def _get_snapshots(self, prefix):
         snapshots = {}
         for key in self.bucket.list(prefix):
             key = self.bucket.get_key(key.key)
-            snapshots[key.name] = Snapshot(key, self)
+            try:
+                fs_name, snap_name = key.key.split("@", 1)
+            except ValueError:
+                logging.warning("skipping %r", key)
+                continue
+            local = self._local_snapshots.get(fs_name, {}).get(snap_name)
+            snapshots[key.name] = Snapshot(key, manager=self, local=local)
         return snapshots
 
     def list(self):
-        return self._snapshots.values()
+        return sorted(self._snapshots.values(), key=operator.attrgetter('name'))
 
     def get(self, name):
         return self._snapshots.get(name)
@@ -125,12 +143,12 @@ class SnapshotManager(object):
 
 def list_snapshots(bucket, prefix):
     mgr = SnapshotManager(bucket, LocalZFS(), prefix=prefix)
-    fmt = "{:40} | {:15} | {:5}"
-    print fmt.format("NAME", "TYPE", "HEALTH")
+    fmt = "{:40} | {:15} | {:15} | {:10}"
+    print fmt.format("NAME", "TYPE", "HEALTH", "LOCAL STATE")
     for snap in mgr.list():
         snap_type = 'full' if snap.is_full else 'incremental'
         health = snap.reason_broken or 'ok'
-        print fmt.format(snap, snap_type, health)
+        print fmt.format(snap, snap_type, health, snap.local_state)
 
 
 def main():
