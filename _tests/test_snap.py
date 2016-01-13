@@ -43,9 +43,10 @@ class FakeZFSManager(ZFSSnapshotManager):
         'pool/fs@snap_9\t10.0M\t10.0M\t-\t10.0M\n'
     )
 
-    def __init__(self, expected=None):
+    def __init__(self, expected=None, *a, **kwa):
         if expected is not None:
             self._expected = expected
+        super(FakeZFSManager, self).__init__(*a, **kwa)
 
     def _list_snapshots(self):
         return self._expected
@@ -175,9 +176,20 @@ def test_list_local_snapshots():
     assert snapshots['pool/fs'].items() == expected['pool/fs'].items()
 
 
-# def test_zfs_list():
-#     zfs = FakeZFSManager()
-#     assert [(snap.name, snap.parent) for snap in zfs.list()]
+def test_zfs_list():
+    zfs = FakeZFSManager()
+    actual = [
+        (snap.name, snap.parent.name if snap.parent else None)
+        for snap in zfs.list()]
+    expected = [
+        ('pool/fs@snap_1', None),
+        ('pool/fs@snap_2', 'pool/fs@snap_1'),
+        ('pool/fs@snap_3', 'pool/fs@snap_2'),
+        ('pool/fs@snap_9', 'pool/fs@snap_3'),
+        ('pool@p1', None),
+        ('pool@p2', 'pool@p1'),
+    ]
+    assert actual == expected
 
 
 # def test_local_state(s3_manager):

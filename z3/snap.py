@@ -99,26 +99,28 @@ class S3SnapshotManager(object):
 
 
 class ZFSSnapshot(object):
-    def __init__(self, name, parent_name=None, manager=None):
+    def __init__(self, name, metadata, parent=None, manager=None):
         self.name = name
+        self.parent = parent
 
-    @property
-    def parent(self):
-        pass
+    def __repr__(self):
+        return "<Snapshot {} [{}]>".format(self.name, self.parent.name if self.parent else '')
 
 
 class ZFSSnapshotManager(object):
     def __init__(self):
-        pass
+        self._snapshots = self._build_snapshots()
 
     def _list_snapshots(self):
+        # This is overriddend in tests
+        # see FakeZFSManager
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
              'name,used,refer,mountpoint,written'])
 
     def parse_snapshots(self):
         """Returns all snapshots grouped by filesystem, a dict of OrderedDict's
-        The order of snapshots matters when determning parents for incremental send,
+        The order of snapshots matters when determining parents for incremental send,
         so it's preserved.
         Data is indexed by filesystem then for each filesystem we have an OrderedDict
         of snapshots.
@@ -142,8 +144,24 @@ class ZFSSnapshotManager(object):
             }
         return vols
 
+    def _build_snapshots(self):
+        snapshots = {}
+        for fs_name, fs_snaps in self.parse_snapshots().iteritems():
+            parent = None
+            for snap_name, data in fs_snaps.iteritems():
+                full_name = '{}@{}'.format(fs_name, snap_name)
+                zfs_snap = ZFSSnapshot(
+                    full_name,
+                    metadata=data,
+                    parent=parent,
+                    manager=self,
+                )
+                snapshots[full_name] = zfs_snap
+                parent = zfs_snap
+        return snapshots
+
     def list(self):
-        pass
+        return sorted(self._snapshots.itervalues(), key=operator.attrgetter('name'))
 
 
 class PairManager(object):
