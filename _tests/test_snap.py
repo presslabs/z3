@@ -42,6 +42,7 @@ class FakeZFS(LocalZFS):
         'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_9\t10.0M\t10.0M\t-\t10.0M\n'
     )
 
     def __init__(self, expected=None):
@@ -160,7 +161,14 @@ def test_list_local_snapshots():
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M'
-            }
+            },
+            'snap_9': {
+                'mountpoint': '-',
+                'name': 'pool/fs@snap_9',
+                'refer': '10.0M',
+                'used': '10.0M',
+                'written': '10.0M'
+            },
         }
     }
     assert zfs.list_snapshots() == expected
