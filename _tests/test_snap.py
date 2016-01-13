@@ -4,7 +4,7 @@ import boto
 import pytest
 
 from z3.config import get_config
-from z3.snap import list_snapshots, SnapshotManager, LocalZFS
+from z3.snap import list_snapshots, S3SnapshotManager, ZFSSnapshotManager
 
 
 class FakeKey(object):
@@ -33,9 +33,7 @@ class FakeBucket(object):
         return self.fake_data.get(name)
 
 
-
-
-class FakeZFS(LocalZFS):
+class FakeZFSManager(ZFSSnapshotManager):
     _expected = (
         'pool@p1\t0\t19K\t-\t19K\n'
         'pool@p2\t0\t19K\t-\t0\n'
@@ -79,42 +77,42 @@ def write_s3_data():
     ],
     ids=['fake_bucket', 'with_s3']
 )
-def manager(request):
+def s3_manager(request):
     """This parametrized fixture will cause any test using it to execute twice,
     once using fakes and again using boto and hittint s3.
     """
-    return SnapshotManager(request.param(), FakeZFS(), prefix="pool/fs@snap_")
+    return S3SnapshotManager(request.param(), prefix="pool/fs@snap_")
 
 
-def test_list_snapshots(manager):
-    snapshots = sorted(manager.list(), key=lambda el: el.name)
+def test_list_snapshots(s3_manager):
+    snapshots = sorted(s3_manager.list(), key=lambda el: el.name)
     expected = ["pool/fs@snap_1", "pool/fs@snap_2", "pool/fs@snap_3", "pool/fs@snap_4",
                 "pool/fs@snap_5", "pool/fs@snap_6", "pool/fs@snap_7"]
     assert [s.name for s in snapshots] == expected
 
 
-def test_healthy_full(manager):
-    snap = manager.get('pool/fs@snap_1')
+def test_healthy_full(s3_manager):
+    snap = s3_manager.get('pool/fs@snap_1')
     assert snap.is_full
     assert snap.is_healthy
 
 
-def test_healthy_incremental(manager):
-    snap = manager.get('pool/fs@snap_3')
+def test_healthy_incremental(s3_manager):
+    snap = s3_manager.get('pool/fs@snap_3')
     assert snap.is_full is False
     assert snap.is_healthy
 
 
-def test_unhealthy_incremental(manager):
-    snap = manager.get('pool/fs@snap_5')
+def test_unhealthy_incremental(s3_manager):
+    snap = s3_manager.get('pool/fs@snap_5')
     assert snap.is_full is False
     assert snap.is_healthy is False
     assert snap.reason_broken == 'parent broken'
     assert snap.parent.reason_broken == 'missing parent'
 
 
-def test_unhealthy_cycle(manager):
-    snap = manager.get('pool/fs@snap_7')
+def test_unhealthy_cycle(s3_manager):
+    snap = s3_manager.get('pool/fs@snap_7')
     assert snap.is_full is False
     assert snap.is_healthy is False
     assert snap.reason_broken == 'cycle detected'
@@ -122,7 +120,7 @@ def test_unhealthy_cycle(manager):
 
 
 def test_list_local_snapshots():
-    zfs = FakeZFS()
+    zfs = FakeZFSManager()
     expected = {
         'pool': {
             'p1': {
@@ -174,12 +172,18 @@ def test_list_local_snapshots():
     assert zfs.list_snapshots() == expected
 
 
-def test_local_state(manager):
-    snap_1 = manager.get('pool/fs@snap_1')
-    snap_2 = manager.get('pool/fs@snap_2')
-    snap_3 = manager.get('pool/fs@snap_3')
-    snap_4 = manager.get('pool/fs@snap_4')
-    assert snap_1.local_state == "OK"
-    assert snap_2.local_state == "OK"
-    assert snap_3.local_state == "OK"
-    assert snap_4.local_state == "missing locally"
+# def test_local_state(s3_manager):
+#     snap_1 = s3_manager.get('pool/fs@snap_1')
+#     snap_2 = s3_manager.get('pool/fs@snap_2')
+#     snap_3 = s3_manager.get('pool/fs@snap_3')
+#     snap_4 = s3_manager.get('pool/fs@snap_4')
+#     assert snap_1.local_state == "OK"
+#     assert snap_2.local_state == "OK"
+#     assert snap_3.local_state == "OK"
+#     assert snap_4.local_state == "missing locally"
+
+
+# def test_list_missing_remote(s3_manager):
+#     snap_9 = s3_manager.get('pool/fs@snap_9')
+#     assert snap_9.local_state == 'OK'
+#     assert snap_9.reason_broken == 'missing'

@@ -22,27 +22,23 @@ def cached(func):
     return wrapper
 
 
-class Snapshot(object):
+class S3Snapshot(object):
     CYCLE = 'cycle detected'
     MISSING_PARENT = 'missing parent'
     PARENT_BROKEN = 'parent broken'
 
-    MISSING_LOCALLY = 'missing locally'
-    OK_LOCALLY = 'OK'
-
-    def __init__(self, key, manager, local):
+    def __init__(self, key, manager):
         self.name = key.key
         self.metadata = key.metadata
-        self.local = local
         self._mgr = manager
         self._reason_broken = None
 
     def __repr__(self):
         if self.is_full:
-            return "<Snapshot {}/full>".format(self.name)
+            return "<Snapshot {} [full]>".format(self.name)
         else:
-            parent = "/" + self.metadata.get("parent", "")
-            return "<Snapshot {}{}>".format(self.name, parent)
+            parent = self.metadata.get("parent", "")
+            return "<Snapshot {} [{}]>".format(self.name, parent)
 
     @property
     def is_full(self):
@@ -81,14 +77,30 @@ class Snapshot(object):
             return
         return self._reason_broken
 
-    @property
-    def local_state(self):
-        if self.local is None:
-            return self.MISSING_LOCALLY
-        return self.OK_LOCALLY
+
+class S3SnapshotManager(object):
+    def __init__(self, bucket, prefix=""):
+        self.bucket = bucket
+        self._snapshots = self._get_snapshots(prefix=prefix)
+
+    def _get_snapshots(self, prefix):
+        snapshots = {}
+        for key in self.bucket.list(prefix):
+            key = self.bucket.get_key(key.key)
+            snapshots[key.name] = S3Snapshot(key, manager=self)
+        return snapshots
+
+    def list(self):
+        return sorted(self._snapshots.values(), key=operator.attrgetter('name'))
+
+    def get(self, name):
+        return self._snapshots.get(name)
 
 
-class LocalZFS(object):
+class ZFSSnapshotManager(object):
+    def __init__(self):
+        self.list_snapshots()
+
     def _list_snapshots(self):
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
@@ -115,35 +127,18 @@ class LocalZFS(object):
         return vols
 
 
-class SnapshotManager(object):
-    def __init__(self, bucket, local, prefix=""):
-        self.bucket = bucket
-        self._local_snapshots = local.list_snapshots()
-        self._snapshots = self._get_snapshots(prefix=prefix)
-
-    def _get_snapshots(self, prefix):
-        snapshots = {}
-        for key in self.bucket.list(prefix):
-            key = self.bucket.get_key(key.key)
-            try:
-                fs_name, snap_name = key.key.split("@", 1)
-            except ValueError:
-                logging.warning("skipping %r", key)
-                continue
-            local = self._local_snapshots.get(fs_name, {}).get(snap_name)
-            snapshots[key.name] = Snapshot(key, manager=self, local=local)
-        return snapshots
+class PairManager(object):
+    def __init__(self, s3_manager, zfs_manager):
+        pass
 
     def list(self):
-        return sorted(self._snapshots.values(), key=operator.attrgetter('name'))
-
-    def get(self, name):
-        return self._snapshots.get(name)
+        # XXX: this should list tuples (s3_snapshot, local_snapshot)
+        pass
 
 
 def list_snapshots(bucket, prefix):
-    mgr = SnapshotManager(bucket, LocalZFS(), prefix=prefix)
-    fmt = "{:40} | {:15} | {:15} | {:10}"
+    mgr = S3SnapshotManager(bucket, prefix=prefix)
+    fmt = "{:43} | {:15} | {:15} | {:10}"
     print fmt.format("NAME", "TYPE", "HEALTH", "LOCAL STATE")
     for snap in mgr.list():
         snap_type = 'full' if snap.is_full else 'incremental'
