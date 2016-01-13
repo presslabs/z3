@@ -3,6 +3,7 @@ import functools
 import logging
 import operator
 import subprocess
+from collections import OrderedDict
 
 import boto
 
@@ -29,7 +30,7 @@ class S3Snapshot(object):
 
     def __init__(self, key, manager):
         self.name = key.key
-        self.metadata = key.metadata
+        self._metadata = key.metadata
         self._mgr = manager
         self._reason_broken = None
 
@@ -37,16 +38,16 @@ class S3Snapshot(object):
         if self.is_full:
             return "<Snapshot {} [full]>".format(self.name)
         else:
-            parent = self.metadata.get("parent", "")
+            parent = self._metadata.get("parent", "")
             return "<Snapshot {} [{}]>".format(self.name, parent)
 
     @property
     def is_full(self):
-        return self.metadata.get('is_full') == 'true'
+        return self._metadata.get('is_full') == 'true'
 
     @property
     def parent(self):
-        parent_name = self.metadata.get('parent')
+        parent_name = self._metadata.get('parent')
         return self._mgr.get(parent_name)
 
     @cached
@@ -97,16 +98,31 @@ class S3SnapshotManager(object):
         return self._snapshots.get(name)
 
 
+class ZFSSnapshot(object):
+    def __init__(self, name, parent_name=None, manager=None):
+        self.name = name
+
+    @property
+    def parent(self):
+        pass
+
+
 class ZFSSnapshotManager(object):
     def __init__(self):
-        self.list_snapshots()
+        pass
 
     def _list_snapshots(self):
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
              'name,used,refer,mountpoint,written'])
 
-    def list_snapshots(self):
+    def parse_snapshots(self):
+        """Returns all snapshots grouped by filesystem, a dict of OrderedDict's
+        The order of snapshots matters when determning parents for incremental send,
+        so it's preserved.
+        Data is indexed by filesystem then for each filesystem we have an OrderedDict
+        of snapshots.
+        """
         try:
             snap = self._list_snapshots()
         except OSError as err:
@@ -116,7 +132,7 @@ class ZFSSnapshotManager(object):
         for line in snap.splitlines():
             name, used, refer, mountpoint, written = line.split('\t')
             vol_name, snap_name = name.split('@', 1)
-            snapshots = vols.setdefault(vol_name, {})
+            snapshots = vols.setdefault(vol_name, OrderedDict())
             snapshots[snap_name] = {
                 'name': name,
                 'used': used,
@@ -125,6 +141,9 @@ class ZFSSnapshotManager(object):
                 'written': written,
             }
         return vols
+
+    def list(self):
+        pass
 
 
 class PairManager(object):

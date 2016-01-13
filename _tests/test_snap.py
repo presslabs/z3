@@ -1,4 +1,4 @@
-import os.path
+from collections import OrderedDict
 
 import boto
 import pytest
@@ -122,54 +122,62 @@ def test_unhealthy_cycle(s3_manager):
 def test_list_local_snapshots():
     zfs = FakeZFSManager()
     expected = {
-        'pool': {
-            'p1': {
+        'pool': OrderedDict([
+            ('p1', {
                 'mountpoint': '-',
                 'name': 'pool@p1',
                 'refer': '19K',
                 'used': '0',
                 'written': '19K',
-            },
-            'p2': {
+            }),
+            ('p2', {
                 'mountpoint': '-',
                 'name': 'pool@p2',
                 'refer': '19K',
                 'used': '0',
                 'written': '0',
-            },
-        },
-        'pool/fs': {
-            'snap_1': {
+            }),
+        ]),
+        'pool/fs': OrderedDict([
+            ('snap_1', {
                 'mountpoint': '-',
                 'name': 'pool/fs@snap_1',
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M',
-            },
-            'snap_2': {
+            }),
+            ('snap_2', {
                 'mountpoint': '-',
                 'name': 'pool/fs@snap_2',
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M',
-            },
-            'snap_3': {
+            }),
+            ('snap_3', {
                 'mountpoint': '-',
                 'name': 'pool/fs@snap_3',
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M'
-            },
-            'snap_9': {
+            }),
+            ('snap_9', {
                 'mountpoint': '-',
                 'name': 'pool/fs@snap_9',
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M'
-            },
-        }
+            }),
+        ])
     }
-    assert zfs.list_snapshots() == expected
+    snapshots = zfs.parse_snapshots()
+    # checking items because we care about order
+    assert snapshots['pool'].items() == expected['pool'].items()
+    assert snapshots['pool/fs'].items() == expected['pool/fs'].items()
+
+
+# def test_zfs_list():
+#     zfs = FakeZFSManager()
+#     assert [(snap.name, snap.parent) for snap in zfs.list()]
 
 
 # def test_local_state(s3_manager):
