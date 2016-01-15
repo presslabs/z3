@@ -108,17 +108,18 @@ class ZFSSnapshot(object):
 
 
 class ZFSSnapshotManager(object):
-    def __init__(self):
-        self._snapshots = self._build_snapshots()
+    def __init__(self, fs_name):
+        self._snapshots = self._build_snapshots(fs_name=fs_name)
+        self._sorted = None
 
     def _list_snapshots(self):
-        # This is overriddend in tests
+        # This is overridden in tests
         # see FakeZFSManager
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
              'name,used,refer,mountpoint,written'])
 
-    def parse_snapshots(self):
+    def _parse_snapshots(self):
         """Returns all snapshots grouped by filesystem, a dict of OrderedDict's
         The order of snapshots matters when determining parents for incremental send,
         so it's preserved.
@@ -144,33 +145,95 @@ class ZFSSnapshotManager(object):
             }
         return vols
 
-    def _build_snapshots(self):
-        snapshots = {}
-        for fs_name, fs_snaps in self.parse_snapshots().iteritems():
-            parent = None
-            for snap_name, data in fs_snaps.iteritems():
-                full_name = '{}@{}'.format(fs_name, snap_name)
-                zfs_snap = ZFSSnapshot(
-                    full_name,
-                    metadata=data,
-                    parent=parent,
-                    manager=self,
-                )
-                snapshots[full_name] = zfs_snap
-                parent = zfs_snap
+    def _build_snapshots(self, fs_name):
+        snapshots = OrderedDict()
+        # for fs_name, fs_snaps in self._parse_snapshots().iteritems():
+        fs_snaps = self._parse_snapshots()[fs_name]
+        parent = None
+        for snap_name, data in fs_snaps.iteritems():
+            full_name = '{}@{}'.format(fs_name, snap_name)
+            zfs_snap = ZFSSnapshot(
+                full_name,
+                metadata=data,
+                parent=parent,
+                manager=self,
+            )
+            snapshots[full_name] = zfs_snap
+            parent = zfs_snap
         return snapshots
 
     def list(self):
-        return sorted(self._snapshots.itervalues(), key=operator.attrgetter('name'))
+        return self._snapshots.values()
+
+    def get_latest(self):
+        return self._snapshots.values()[-1]
+
+    def get(self, name):
+        return self._snapshots.get(name)
+
+
+class CommandExecutor(object):
+    @staticmethod
+    def shell(cmd, die=True, encoding='utf8'):
+        try:
+            # print(cmd)
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
+            # print(out)
+            # print("")
+            return str(out, encoding=encoding)
+        except subprocess.CalledProcessError as err:
+            # print(err.output)
+            # print("")
+            if die is True:
+                raise
+            else:
+                return str(err.output, encoding=encoding)
+
+    @property
+    @cached
+    def has_pv(self):
+        return subprocess.call(['which', 'pv']) == 0
+
+    def pipe(self, cmd1, cmd2):
+        """Executes commands"""
+        if self.has_pv:
+            return self.shell("{} | pv | {}".format(cmd1, cmd2))
+        else:
+            return self.shell("{} | {}".format(cmd1, cmd2))
 
 
 class PairManager(object):
-    def __init__(self, s3_manager, zfs_manager):
-        pass
+    def __init__(self, s3_manager, zfs_manager, command_executor=None):
+        self.s3_manager = s3_manager
+        self.zfs_manager = zfs_manager
+        self._cmd = command_executor or CommandExecutor()
 
     def list(self):
-        # XXX: this should list tuples (s3_snapshot, local_snapshot)
-        pass
+        pairs = []
+        seen = set([])
+        for z_snap in self.zfs_manager.list():
+            seen.add(z_snap.name)
+            pairs.append(
+                (self.s3_manager.get(z_snap.name), z_snap))
+        for s3_snap in self.s3_manager.list():
+            if s3_snap.name not in seen:
+                pairs.append((s3_snap, None))
+        return pairs
+
+    def backup_full(self, snap_name=None):
+        """Do a full backup of a snapshot. By default latest local snapshot"""
+        if snap_name is None:
+            z_snap = self.zfs_manager.get_latest()
+        else:
+            z_snap = self.zfs_manager.get(snap_name)
+        if z_snap is None:  #TODO: this error could be more specific
+            raise Exception('Failed to get snapshot while doing full upload')
+        self._cmd.pipe(
+            "zfs send '{}'".format(z_snap.name),
+            "pput --meta is_full=true {}".format(z_snap.name)
+        )
+
+
 
 
 def list_snapshots(bucket, prefix):

@@ -4,7 +4,8 @@ import boto
 import pytest
 
 from z3.config import get_config
-from z3.snap import list_snapshots, S3SnapshotManager, ZFSSnapshotManager
+from z3.snap import (list_snapshots, S3SnapshotManager, ZFSSnapshotManager,
+                     PairManager, CommandExecutor)
 
 
 class FakeKey(object):
@@ -50,9 +51,17 @@ class FakeZFSManager(ZFSSnapshotManager):
 
     def _list_snapshots(self):
         return self._expected
-        # import _tests
-        # with open(os.path.join(_tests.__path__[0], 'zfs_list.txt')) as fd:
-        #     return fd.read()
+
+
+class FakeCommandExecutor(CommandExecutor):
+    has_pv = False  # disable pv for consistent test output
+
+    def __init__(self, *a, **kwa):
+        super(FakeCommandExecutor, self).__init__(*a, **kwa)
+        self._called_commands = []
+
+    def shell(self, cmd):  # pylint: disable=arguments-differ
+        self._called_commands.append(cmd)
 
 
 def write_s3_data():
@@ -80,7 +89,7 @@ def write_s3_data():
 )
 def s3_manager(request):
     """This parametrized fixture will cause any test using it to execute twice,
-    once using fakes and again using boto and hittint s3.
+    once using fakes and again using boto and hitting s3.
     """
     return S3SnapshotManager(request.param(), prefix="pool/fs@snap_")
 
@@ -121,7 +130,7 @@ def test_unhealthy_cycle(s3_manager):
 
 
 def test_list_local_snapshots():
-    zfs = FakeZFSManager()
+    zfs = FakeZFSManager(fs_name='pool/fs')
     expected = {
         'pool': OrderedDict([
             ('p1', {
@@ -170,26 +179,66 @@ def test_list_local_snapshots():
             }),
         ])
     }
-    snapshots = zfs.parse_snapshots()
+    snapshots = zfs._parse_snapshots()
     # checking items because we care about order
     assert snapshots['pool'].items() == expected['pool'].items()
     assert snapshots['pool/fs'].items() == expected['pool/fs'].items()
 
 
-def test_zfs_list():
-    zfs = FakeZFSManager()
+@pytest.mark.parametrize("fs_name, expected", [
+    ('pool/fs', [('pool/fs@snap_1', None),
+                 ('pool/fs@snap_2', 'pool/fs@snap_1'),
+                 ('pool/fs@snap_3', 'pool/fs@snap_2'),
+                 ('pool/fs@snap_9', 'pool/fs@snap_3')]),
+    ('pool', [('pool@p1', None),
+              ('pool@p2', 'pool@p1')]),
+])
+def test_zfs_list(fs_name, expected):
+    zfs = FakeZFSManager(fs_name=fs_name)
     actual = [
         (snap.name, snap.parent.name if snap.parent else None)
         for snap in zfs.list()]
-    expected = [
-        ('pool/fs@snap_1', None),
-        ('pool/fs@snap_2', 'pool/fs@snap_1'),
-        ('pool/fs@snap_3', 'pool/fs@snap_2'),
-        ('pool/fs@snap_9', 'pool/fs@snap_3'),
-        ('pool@p1', None),
-        ('pool@p2', 'pool@p1'),
-    ]
     assert actual == expected
+
+
+def test_pair_list(s3_manager):
+    zfs_manager = FakeZFSManager(fs_name='pool/fs')
+    pair_manager = PairManager(s3_manager, zfs_manager)
+    pairs = pair_manager.list()
+    name = lambda snap: snap.name if snap is not None else None
+    names = [
+        (name(s3_snap), name(z_snap))
+        for (s3_snap, z_snap) in pairs]
+    expected = [
+        ('pool/fs@snap_1', 'pool/fs@snap_1'),
+        ('pool/fs@snap_2', 'pool/fs@snap_2'),
+        ('pool/fs@snap_3', 'pool/fs@snap_3'),
+        (None, 'pool/fs@snap_9'),  # snap_9 doesn't exist in the s3 fixture
+        # s3-only snapshot pairs are listed last
+        ('pool/fs@snap_4', None),
+        ('pool/fs@snap_5', None),
+        ('pool/fs@snap_6', None),
+        ('pool/fs@snap_7', None),
+    ]
+    assert names == expected
+
+
+def test_backup_latest_full(s3_manager):
+    zfs_manager = FakeZFSManager(fs_name='pool/fs')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.backup_full()
+    assert fake_cmd._called_commands == [
+        "zfs send 'pool/fs@snap_9' | pput --meta is_full=true pool/fs@snap_9"]
+
+
+def test_backup_full(s3_manager):
+    zfs_manager = FakeZFSManager(fs_name='pool/fs')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.backup_full('pool/fs@snap_3')
+    assert fake_cmd._called_commands == [
+        "zfs send 'pool/fs@snap_3' | pput --meta is_full=true pool/fs@snap_3"]
 
 
 # def test_local_state(s3_manager):
