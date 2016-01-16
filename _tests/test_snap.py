@@ -41,6 +41,7 @@ class FakeZFSManager(ZFSSnapshotManager):
         'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_9\t10.0M\t10.0M\t-\t10.0M\n'
     )
 
@@ -170,6 +171,13 @@ def test_list_local_snapshots():
                 'used': '10.0M',
                 'written': '10.0M'
             }),
+            ('snap_8', {
+                'mountpoint': '-',
+                'name': 'pool/fs@snap_8',
+                'refer': '10.0M',
+                'used': '10.0M',
+                'written': '10.0M'
+            }),
             ('snap_9', {
                 'mountpoint': '-',
                 'name': 'pool/fs@snap_9',
@@ -189,7 +197,8 @@ def test_list_local_snapshots():
     ('pool/fs', [('pool/fs@snap_1', None),
                  ('pool/fs@snap_2', 'pool/fs@snap_1'),
                  ('pool/fs@snap_3', 'pool/fs@snap_2'),
-                 ('pool/fs@snap_9', 'pool/fs@snap_3')]),
+                 ('pool/fs@snap_8', 'pool/fs@snap_3'),
+                 ('pool/fs@snap_9', 'pool/fs@snap_8')]),
     ('pool', [('pool@p1', None),
               ('pool@p2', 'pool@p1')]),
 ])
@@ -213,6 +222,7 @@ def test_pair_list(s3_manager):
         ('pool/fs@snap_1', 'pool/fs@snap_1'),
         ('pool/fs@snap_2', 'pool/fs@snap_2'),
         ('pool/fs@snap_3', 'pool/fs@snap_3'),
+        (None, 'pool/fs@snap_8'),  # snap_8 doesn't exist in the s3 fixture
         (None, 'pool/fs@snap_9'),  # snap_9 doesn't exist in the s3 fixture
         # s3-only snapshot pairs are listed last
         ('pool/fs@snap_4', None),
@@ -247,8 +257,10 @@ def test_backup_incremental_latest(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     pair_manager.backup_incremental()
     assert fake_cmd._called_commands == [
-        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_9' | "
-         "pput --meta parent=pool/fs@snap_3 pool/fs@snap_9")
+        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
+         "pput --meta parent=pool/fs@snap_3 pool/fs@snap_8"),
+        ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
+         "pput --meta parent=pool/fs@snap_8 pool/fs@snap_9")
     ]
 
 
