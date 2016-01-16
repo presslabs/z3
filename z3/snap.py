@@ -220,20 +220,42 @@ class PairManager(object):
                 pairs.append((s3_snap, None))
         return pairs
 
-    def backup_full(self, snap_name=None):
-        """Do a full backup of a snapshot. By default latest local snapshot"""
+    def _snapshot_to_backup(self, snap_name):
         if snap_name is None:
             z_snap = self.zfs_manager.get_latest()
         else:
             z_snap = self.zfs_manager.get(snap_name)
         if z_snap is None:  #TODO: this error could be more specific
-            raise Exception('Failed to get snapshot while doing full upload')
+            raise Exception('Failed to get the snapshot to upload')
+        return z_snap
+
+    def backup_full(self, snap_name=None):
+        """Do a full backup of a snapshot. By default latest local snapshot"""
+        z_snap = self._snapshot_to_backup(snap_name)
         self._cmd.pipe(
             "zfs send '{}'".format(z_snap.name),
             "pput --meta is_full=true {}".format(z_snap.name)
         )
 
-
+    def backup_incremental(self, snap_name=None):
+        z_snap = self._snapshot_to_backup(snap_name)
+        to_upload = []
+        current = z_snap
+        while True:
+            s3_snap = self.s3_manager.get(current.name)
+            if s3_snap is not None:
+                break
+            to_upload.append(current)
+            if current.parent is None:
+                break
+            current = current.parent
+        for z_snap in reversed(to_upload):
+            self._cmd.pipe(
+                "zfs send -i '{}' '{}'".format(
+                    z_snap.parent.name, z_snap.name),
+                "pput --meta parent={} {}".format(
+                    z_snap.parent.name, z_snap.name)
+            )
 
 
 def list_snapshots(bucket, prefix):

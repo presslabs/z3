@@ -241,6 +241,17 @@ def test_backup_full(s3_manager):
         "zfs send 'pool/fs@snap_3' | pput --meta is_full=true pool/fs@snap_3"]
 
 
+def test_backup_incremental_latest(s3_manager):
+    zfs_manager = FakeZFSManager(fs_name='pool/fs')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.backup_incremental()
+    assert fake_cmd._called_commands == [
+        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_9' | "
+         "pput --meta parent=pool/fs@snap_3 pool/fs@snap_9")
+    ]
+
+
 # def test_local_state(s3_manager):
 #     snap_1 = s3_manager.get('pool/fs@snap_1')
 #     snap_2 = s3_manager.get('pool/fs@snap_2')
