@@ -135,7 +135,7 @@ class FakeZFSManager(ZFSSnapshotManager):
 def test_list_local_snapshots():
     zfs = FakeZFSManager(fs_name='pool/fs', snapshot_prefix='snap_')
     expected = {
-        'pool': OrderedDict([  # parse_snapshots will return snapshots for ALL filesystems
+        'pool': OrderedDict([  # _parse_snapshots returns snapshots for ALL filesystems
             ('snap_p1', {
                 'name': 'pool@snap_p1',
                 'mountpoint': '-', 'refer': '19K', 'used': '0', 'written': '19K',

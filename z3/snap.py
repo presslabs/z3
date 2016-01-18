@@ -199,19 +199,11 @@ class ZFSSnapshotManager(object):
 
 class CommandExecutor(object):
     @staticmethod
-    def shell(cmd, die=True, encoding='utf8', dry_run=False):
-        try:
-            if dry_run:
-                print cmd
-                return ""
-            else:
-                out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
-            return unicode(out, encoding=encoding)
-        except subprocess.CalledProcessError as err:
-            if die is True:
-                raise
-            else:
-                return str(err.output, encoding=encoding)
+    def shell(cmd, dry_run=False):
+        if dry_run:
+            print cmd
+        else:
+            subprocess.check_call(cmd, shell=True)
 
     @property
     @cached
