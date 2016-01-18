@@ -34,37 +34,6 @@ class FakeBucket(object):
         return self.fake_data.get(name)
 
 
-class FakeZFSManager(ZFSSnapshotManager):
-    _expected = (
-        'pool@p1\t0\t19K\t-\t19K\n'
-        'pool@p2\t0\t19K\t-\t0\n'
-        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_9\t10.0M\t10.0M\t-\t10.0M\n'
-    )
-
-    def __init__(self, expected=None, *a, **kwa):
-        if expected is not None:
-            self._expected = expected
-        super(FakeZFSManager, self).__init__(*a, **kwa)
-
-    def _list_snapshots(self):
-        return self._expected
-
-
-class FakeCommandExecutor(CommandExecutor):
-    has_pv = False  # disable pv for consistent test output
-
-    def __init__(self, *a, **kwa):
-        super(FakeCommandExecutor, self).__init__(*a, **kwa)
-        self._called_commands = []
-
-    def shell(self, cmd):  # pylint: disable=arguments-differ
-        self._called_commands.append(cmd)
-
-
 def write_s3_data():
     """Takes the default data from FakeBucket and writes it to S3.
     Allows running the same tests against fakes and the boto api.
@@ -77,7 +46,6 @@ def write_s3_data():
         headers = {("x-amz-meta-" + k): v for k, v in fake_key.metadata.iteritems()}
         key.set_contents_from_string("spam", headers=headers)
     return bucket
-
 
 
 @pytest.fixture(
@@ -130,65 +98,71 @@ def test_unhealthy_cycle(s3_manager):
     assert snap.parent.reason_broken == 'cycle detected'
 
 
+class FakeZFSManager(ZFSSnapshotManager):
+    _expected = (
+        # pool is a different zfs dataset, the s3 fixtures don't include it
+        'pool@p1\t0\t19K\t-\t19K\n'
+        'pool@p2\t0\t19K\t-\t0\n'
+
+        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+
+        # local only snapshots, not in s3 fixtures
+        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_9\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+
+    def __init__(self, expected=None, *a, **kwa):
+        if expected is not None:
+            self._expected = expected
+        super(FakeZFSManager, self).__init__(*a, **kwa)
+
+    def _list_snapshots(self):
+        return self._expected
+
+
 def test_list_local_snapshots():
     zfs = FakeZFSManager(fs_name='pool/fs')
     expected = {
-        'pool': OrderedDict([
+        'pool': OrderedDict([  # parse_snapshots will return snapshots for ALL filesystems
             ('p1', {
-                'mountpoint': '-',
                 'name': 'pool@p1',
-                'refer': '19K',
-                'used': '0',
-                'written': '19K',
+                'mountpoint': '-', 'refer': '19K', 'used': '0', 'written': '19K',
             }),
             ('p2', {
-                'mountpoint': '-',
                 'name': 'pool@p2',
-                'refer': '19K',
-                'used': '0',
-                'written': '0',
+                'mountpoint': '-', 'refer': '19K', 'used': '0', 'written': '0',
             }),
         ]),
         'pool/fs': OrderedDict([
             ('snap_1', {
-                'mountpoint': '-',
                 'name': 'pool/fs@snap_1',
+                'mountpoint': '-',
                 'refer': '10.0M',
                 'used': '10.0M',
                 'written': '10.0M',
             }),
             ('snap_2', {
-                'mountpoint': '-',
                 'name': 'pool/fs@snap_2',
-                'refer': '10.0M',
-                'used': '10.0M',
-                'written': '10.0M',
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M',
             }),
             ('snap_3', {
-                'mountpoint': '-',
                 'name': 'pool/fs@snap_3',
-                'refer': '10.0M',
-                'used': '10.0M',
-                'written': '10.0M'
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M'
             }),
             ('snap_8', {
-                'mountpoint': '-',
                 'name': 'pool/fs@snap_8',
-                'refer': '10.0M',
-                'used': '10.0M',
-                'written': '10.0M'
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M'
             }),
             ('snap_9', {
-                'mountpoint': '-',
                 'name': 'pool/fs@snap_9',
-                'refer': '10.0M',
-                'used': '10.0M',
-                'written': '10.0M'
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M'
             }),
         ])
     }
     snapshots = zfs._parse_snapshots()
-    # checking items because we care about order
+    # comparing .items() because we care about the sorting in the OrderedDict's
     assert snapshots['pool'].items() == expected['pool'].items()
     assert snapshots['pool/fs'].items() == expected['pool/fs'].items()
 
@@ -210,9 +184,25 @@ def test_zfs_list(fs_name, expected):
     assert actual == expected
 
 
-def test_pair_list(s3_manager):
+class FakeCommandExecutor(CommandExecutor):
+    has_pv = False  # disable pv for consistent test output
+
+    def __init__(self, *a, **kwa):
+        super(FakeCommandExecutor, self).__init__(*a, **kwa)
+        self._called_commands = []
+
+    def shell(self, cmd):  # pylint: disable=arguments-differ
+        self._called_commands.append(cmd)
+
+
+@pytest.fixture
+def pair_manager(s3_manager):
     zfs_manager = FakeZFSManager(fs_name='pool/fs')
-    pair_manager = PairManager(s3_manager, zfs_manager)
+    fake_cmd = FakeCommandExecutor()
+    return PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+
+
+def test_pair_list(pair_manager):
     pairs = pair_manager.list()
     name = lambda snap: snap.name if snap is not None else None
     names = [
@@ -233,30 +223,21 @@ def test_pair_list(s3_manager):
     assert names == expected
 
 
-def test_backup_latest_full(s3_manager):
-    zfs_manager = FakeZFSManager(fs_name='pool/fs')
-    fake_cmd = FakeCommandExecutor()
-    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+def test_backup_latest_full(pair_manager):
     pair_manager.backup_full()
-    assert fake_cmd._called_commands == [
+    assert pair_manager._cmd._called_commands == [
         "zfs send 'pool/fs@snap_9' | pput --meta is_full=true pool/fs@snap_9"]
 
 
-def test_backup_full(s3_manager):
-    zfs_manager = FakeZFSManager(fs_name='pool/fs')
-    fake_cmd = FakeCommandExecutor()
-    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+def test_backup_full(pair_manager):
     pair_manager.backup_full('pool/fs@snap_3')
-    assert fake_cmd._called_commands == [
+    assert pair_manager._cmd._called_commands == [
         "zfs send 'pool/fs@snap_3' | pput --meta is_full=true pool/fs@snap_3"]
 
 
-def test_backup_incremental_latest(s3_manager):
-    zfs_manager = FakeZFSManager(fs_name='pool/fs')
-    fake_cmd = FakeCommandExecutor()
-    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+def test_backup_incremental_latest(pair_manager):
     pair_manager.backup_incremental()
-    assert fake_cmd._called_commands == [
+    assert pair_manager._cmd._called_commands == [
         ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
          "pput --meta parent=pool/fs@snap_3 pool/fs@snap_8"),
         ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
