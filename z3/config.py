@@ -9,6 +9,10 @@ _settings = None
 
 
 class OnionDict(object):
+    """Wrapps multiple dictionaries. Tries to read data from each dict
+    in turn.
+    Used to implement a fallback mechanism.
+    """
     def __init__(self, *args):
         self.__dictionaries = args
 
@@ -42,7 +46,7 @@ def get_config():
         if local_settings:
             _config.read(local_settings)
         _settings = OnionDict(
-            os.environ,
+            os.environ,  # env variables take precedence
             dict((k.upper(), v) for k, v in _config.items("main"))
         )
     return _settings

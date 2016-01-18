@@ -2,6 +2,7 @@ import argparse
 import functools
 import logging
 import operator
+import os
 import subprocess
 from collections import OrderedDict
 
@@ -42,8 +43,7 @@ class S3Snapshot(object):
         if self.is_full:
             return "<Snapshot {} [full]>".format(self.name)
         else:
-            parent = self._metadata.get("parent", "")
-            return "<Snapshot {} [{}]>".format(self.name, parent)
+            return "<Snapshot {} [{}]>".format(self.name, self.parent_name)
 
     @property
     def is_full(self):
@@ -53,6 +53,10 @@ class S3Snapshot(object):
     def parent(self):
         parent_name = self._metadata.get('parent')
         return self._mgr.get(parent_name)
+
+    @property
+    def parent_name(self):
+        return self._metadata.get("parent")
 
     @cached
     def _is_healthy(self, visited=frozenset()):
@@ -180,11 +184,11 @@ class CommandExecutor(object):
     @staticmethod
     def shell(cmd, die=True, encoding='utf8'):
         try:
-            # print(cmd)
+            print cmd
             out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
             # print(out)
             # print("")
-            return str(out, encoding=encoding)
+            return unicode(out, encoding=encoding)
         except subprocess.CalledProcessError as err:
             # print(err.output)
             # print("")
@@ -229,8 +233,8 @@ class PairManager(object):
             z_snap = self.zfs_manager.get_latest()
         else:
             z_snap = self.zfs_manager.get(snap_name)
-        if z_snap is None:  #TODO: this error could be more specific
-            raise Exception('Failed to get the snapshot to upload')
+            if z_snap is None:
+                raise Exception('Failed to get the snapshot {}'.format(snap_name))
         return z_snap
 
     def backup_full(self, snap_name=None):
@@ -268,14 +272,39 @@ class PairManager(object):
             )
 
 
-def list_snapshots(bucket, prefix):
-    mgr = S3SnapshotManager(bucket, prefix=prefix)
-    fmt = "{:43} | {:15} | {:15} | {:10}"
-    print fmt.format("NAME", "TYPE", "HEALTH", "LOCAL STATE")
-    for snap in mgr.list():
-        snap_type = 'full' if snap.is_full else 'incremental'
-        health = snap.reason_broken or 'ok'
-        print fmt.format(snap, snap_type, health, snap.local_state)
+def list_snapshots(bucket, s3_prefix, snapshot_prefix, filesystem):
+    prefix = "{}@{}".format(os.path.join(s3_prefix, filesystem), snapshot_prefix)
+    s3_mgr = S3SnapshotManager(bucket, prefix=prefix)
+    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem)
+    pair_manager = PairManager(s3_mgr, zfs_mgr)
+    fmt = "{:20} | {:20} | {:15} | {:16} | {:10}"
+    print fmt.format("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE")
+    for s3_snap, z_snap in pair_manager.list():
+        if s3_snap is None:
+            snap_type = 'missing'
+            health = '-'
+            name = z_snap.name
+            parent_name = '-'
+            local_state = 'ok'
+        else:
+            snap_type = 'full' if s3_snap.is_full else 'incremental'
+            health = s3_snap.reason_broken or 'ok'
+            parent_name = '' if s3_snap.is_full else s3_snap.parent_name
+            name = s3_snap.name
+            local_state = 'ok' if z_snap is not None else 'missing'
+        print fmt.format(name, parent_name, snap_type, health, local_state)
+
+
+def do_backup(bucket, s3_prefix, snapshot_prefix, filesystem, full, snapshot):
+    prefix = "{}@{}".format(os.path.join(s3_prefix, filesystem), snapshot_prefix)
+    s3_mgr = S3SnapshotManager(bucket, prefix=prefix)
+    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem)
+    pair_manager = PairManager(s3_mgr, zfs_mgr)
+    snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
+    if full is True:
+        pair_manager.backup_full(snap_name=snap_name)
+    else:
+        pair_manager.backup_incremental(snap_name=snap_name)
 
 
 def main():
@@ -283,14 +312,43 @@ def main():
     parser = argparse.ArgumentParser(
         description='list z3 snapshots',
     )
-    parser.add_argument('--prefix',
-                        dest='prefix',
-                        default='',
-                        help='s3 key prefix')
+    parser.add_argument('--s3-prefix',
+                        dest='s3_prefix',
+                        default=cfg.get('S3_PREFIX', 'z3-backup/'),
+                        help='S3 key prefix, defaults to z3-backup')
+    parser.add_argument('--filesystem', '--dataset',
+                        dest='filesystem',
+                        default=cfg.get('FILESYSTEM'),
+                        help='the zfs dataset/filesystem to operate on')
+    parser.add_argument('--snapshot-prefix',
+                        dest='snapshot_prefix',
+                        default=cfg.get('SNAPSHOT_PREFIX', 'zfs-auto-snap:daily'),
+                        help='only look at snapshots that start with this prefix')
+    subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
+
+    backup_parser = subparsers.add_parser(
+        'backup', help='backup local zfs snapshots to an s3 bucket')
+    backup_parser.add_argument('--snapshot', dest='snapshot', default=None,
+                               help='Snapshot to backup. Defaults to latest.')
+    incremental_group = backup_parser.add_mutually_exclusive_group()
+    incremental_group.add_argument(
+        '--full', dest='full', action='store_true', help='Perform full backup')
+    incremental_group.add_argument(
+        '--incremental', dest='incremental', default=True, action='store_true',
+        help='Perform incremental backup; this is the default')
+
+    restore_parser = subparsers.add_parser('restore', help='not implemented')
+    status_parser = subparsers.add_parser('status', help='show status of current backups')
     args = parser.parse_args()
+    print args
     bucket = boto.connect_s3(
         cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
-    list_snapshots(bucket, prefix=args.prefix)
+    if args.subcommand == 'status':
+        list_snapshots(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
+                       filesystem=args.filesystem)
+    elif args.subcommand == 'backup':
+        do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
+                  filesystem=args.filesystem, full=args.full, snapshot=args.snapshot)
 
 
 if __name__ == '__main__':

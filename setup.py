@@ -12,5 +12,11 @@ setup(
     author_email="contact@presslabs.com",
     url="https://github.com/presslabs/z3",
     description="z3",
+    entry_points={
+        'console_scripts': [
+            'pput = z3.pput:main',
+            'z3 = z3.snap:main'
+        ]
+    },
     test_requirements=["pytest>=2.8.5"]
 )
