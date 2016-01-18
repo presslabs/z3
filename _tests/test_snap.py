@@ -110,10 +110,11 @@ def test_unhealthy_cycle(s3_manager):
 class FakeZFSManager(ZFSSnapshotManager):
     _expected = (
         # pool is a different zfs dataset, the s3 fixtures don't include it
-        'pool@p1\t0\t19K\t-\t19K\n'
-        'pool@p2\t0\t19K\t-\t0\n'
+        'pool@snap_p1\t0\t19K\t-\t19K\n'
+        'pool@snap_p2\t0\t19K\t-\t0\n'
 
         'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@funky_name\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
 
@@ -132,25 +133,25 @@ class FakeZFSManager(ZFSSnapshotManager):
 
 
 def test_list_local_snapshots():
-    zfs = FakeZFSManager(fs_name='pool/fs')
+    zfs = FakeZFSManager(fs_name='pool/fs', snapshot_prefix='snap_')
     expected = {
         'pool': OrderedDict([  # parse_snapshots will return snapshots for ALL filesystems
-            ('p1', {
-                'name': 'pool@p1',
+            ('snap_p1', {
+                'name': 'pool@snap_p1',
                 'mountpoint': '-', 'refer': '19K', 'used': '0', 'written': '19K',
             }),
-            ('p2', {
-                'name': 'pool@p2',
+            ('snap_p2', {
+                'name': 'pool@snap_p2',
                 'mountpoint': '-', 'refer': '19K', 'used': '0', 'written': '0',
             }),
         ]),
         'pool/fs': OrderedDict([
             ('snap_1', {
                 'name': 'pool/fs@snap_1',
-                'mountpoint': '-',
-                'refer': '10.0M',
-                'used': '10.0M',
-                'written': '10.0M',
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M',}),
+            ('funky_name', {
+                'name': 'pool/fs@funky_name',
+                'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M',
             }),
             ('snap_2', {
                 'name': 'pool/fs@snap_2',
@@ -182,11 +183,11 @@ def test_list_local_snapshots():
                  ('pool/fs@snap_3', 'pool/fs@snap_2'),
                  ('pool/fs@snap_8', 'pool/fs@snap_3'),
                  ('pool/fs@snap_9', 'pool/fs@snap_8')]),
-    ('pool', [('pool@p1', None),
-              ('pool@p2', 'pool@p1')]),
+    ('pool', [('pool@snap_p1', None),
+              ('pool@snap_p2', 'pool@snap_p1')]),
 ])
 def test_zfs_list(fs_name, expected):
-    zfs = FakeZFSManager(fs_name=fs_name)
+    zfs = FakeZFSManager(fs_name=fs_name, snapshot_prefix='snap_')
     actual = [
         (snap.name, snap.parent.name if snap.parent else None)
         for snap in zfs.list()]
@@ -206,7 +207,7 @@ class FakeCommandExecutor(CommandExecutor):
 
 @pytest.fixture
 def pair_manager(s3_manager):
-    zfs_manager = FakeZFSManager(fs_name='pool/fs')
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', snapshot_prefix='snap_')
     fake_cmd = FakeCommandExecutor()
     return PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
 
@@ -266,7 +267,7 @@ def test_backup_incremental_missing_parent(s3_manager):
         'pool/fs@snap_4\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_5\t10.0M\t10.0M\t-\t10.0M\n'
     )
-    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected)
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
     fake_cmd = FakeCommandExecutor()
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
@@ -285,7 +286,7 @@ def test_backup_incremental_cycle(s3_manager):
         'pool/fs@snap_6\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_7\t10.0M\t10.0M\t-\t10.0M\n'
     )
-    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected)
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
     fake_cmd = FakeCommandExecutor()
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:

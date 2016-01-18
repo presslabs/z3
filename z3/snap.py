@@ -125,8 +125,9 @@ class ZFSSnapshot(object):
 
 
 class ZFSSnapshotManager(object):
-    def __init__(self, fs_name):
+    def __init__(self, fs_name, snapshot_prefix):
         self._fs_name = fs_name
+        self._snapshot_prefix = snapshot_prefix
         self._sorted = None
 
     def _list_snapshots(self):
@@ -168,6 +169,8 @@ class ZFSSnapshotManager(object):
         fs_snaps = self._parse_snapshots()[fs_name]
         parent = None
         for snap_name, data in fs_snaps.iteritems():
+            if not snap_name.startswith(self._snapshot_prefix):
+                continue
             full_name = '{}@{}'.format(fs_name, snap_name)
             zfs_snap = ZFSSnapshot(
                 full_name,
@@ -292,7 +295,7 @@ class PairManager(object):
 def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
-    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem)
+    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
     pair_manager = PairManager(s3_mgr, zfs_mgr)
     fmt = "{:20} | {:20} | {:15} | {:16} | {:10}"
     print fmt.format("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE")
@@ -315,7 +318,7 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
 def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, dry):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
-    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem)
+    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
     pair_manager = PairManager(s3_mgr, zfs_mgr)
     snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
     if full is True:
