@@ -5,7 +5,7 @@ import pytest
 
 from z3.config import get_config
 from z3.snap import (list_snapshots, S3SnapshotManager, ZFSSnapshotManager,
-                     PairManager, CommandExecutor)
+                     PairManager, CommandExecutor, IntegrityError)
 
 
 class FakeKey(object):
@@ -264,18 +264,39 @@ def test_backup_incremental_latest(s3_manager):
     ]
 
 
-# def test_local_state(s3_manager):
-#     snap_1 = s3_manager.get('pool/fs@snap_1')
-#     snap_2 = s3_manager.get('pool/fs@snap_2')
-#     snap_3 = s3_manager.get('pool/fs@snap_3')
-#     snap_4 = s3_manager.get('pool/fs@snap_4')
-#     assert snap_1.local_state == "OK"
-#     assert snap_2.local_state == "OK"
-#     assert snap_3.local_state == "OK"
-#     assert snap_4.local_state == "missing locally"
+def test_backup_incremental_missing_parent(s3_manager):
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'
+        'pool@p2\t0\t19K\t-\t0\n'
+        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_4\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_5\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected)
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    with pytest.raises(IntegrityError) as excp_info:
+        pair_manager.backup_incremental()
+    assert excp_info.value.message == "Broken snapshot detected pool/fs@snap_5, reason: 'parent broken'"
+    assert fake_cmd._called_commands == []
 
 
-# def test_list_missing_remote(s3_manager):
-#     snap_9 = s3_manager.get('pool/fs@snap_9')
-#     assert snap_9.local_state == 'OK'
-#     assert snap_9.reason_broken == 'missing'
+def test_backup_incremental_cycle(s3_manager):
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'
+        'pool@p2\t0\t19K\t-\t0\n'
+        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_6\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_7\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected)
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    with pytest.raises(IntegrityError) as excp_info:
+        pair_manager.backup_incremental()
+    assert excp_info.value.message == "Broken snapshot detected pool/fs@snap_7, reason: 'cycle detected'"
+    assert fake_cmd._called_commands == []

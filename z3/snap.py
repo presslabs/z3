@@ -23,6 +23,10 @@ def cached(func):
     return wrapper
 
 
+class IntegrityError(Exception):
+    pass
+
+
 class S3Snapshot(object):
     CYCLE = 'cycle detected'
     MISSING_PARENT = 'missing parent'
@@ -244,6 +248,12 @@ class PairManager(object):
         while True:
             s3_snap = self.s3_manager.get(current.name)
             if s3_snap is not None:
+                if not s3_snap.is_healthy:
+                    # abort everything if we run in to unhealthy snapshots
+                    raise IntegrityError(
+                        "Broken snapshot detected {}, reason: '{}'".format(
+                            s3_snap.name, s3_snap.reason_broken
+                        ))
                 break
             to_upload.append(current)
             if current.parent is None:
