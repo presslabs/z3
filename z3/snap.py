@@ -90,7 +90,7 @@ class S3Snapshot(object):
 class S3SnapshotManager(object):
     def __init__(self, bucket, prefix=""):
         self.bucket = bucket
-        self._snapshots = self._get_snapshots(prefix=prefix)
+        self._prefix = prefix
 
     def _get_snapshots(self, prefix):
         snapshots = {}
@@ -98,6 +98,11 @@ class S3SnapshotManager(object):
             key = self.bucket.get_key(key.key)
             snapshots[key.name] = S3Snapshot(key, manager=self)
         return snapshots
+
+    @property
+    @cached
+    def _snapshots(self):
+        return self._get_snapshots(prefix=self._prefix)
 
     def list(self):
         return sorted(self._snapshots.values(), key=operator.attrgetter('name'))
@@ -117,7 +122,7 @@ class ZFSSnapshot(object):
 
 class ZFSSnapshotManager(object):
     def __init__(self, fs_name):
-        self._snapshots = self._build_snapshots(fs_name=fs_name)
+        self._fs_name = fs_name
         self._sorted = None
 
     def _list_snapshots(self):
@@ -169,6 +174,11 @@ class ZFSSnapshotManager(object):
             snapshots[full_name] = zfs_snap
             parent = zfs_snap
         return snapshots
+
+    @property
+    @cached
+    def _snapshots(self):
+        return self._build_snapshots(self._fs_name)
 
     def list(self):
         return self._snapshots.values()
