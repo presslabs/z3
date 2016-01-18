@@ -1,4 +1,8 @@
+# pylint: disable=redefined-outer-name,protected-access
 from collections import OrderedDict
+import string
+import random
+import os.path
 
 import boto
 import pytest
@@ -16,22 +20,26 @@ class FakeKey(object):
 
 
 class FakeBucket(object):
+    rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'
     fake_data = {
-        "pool/fs@snap_1": FakeKey('pool/fs@snap_1', {'is_full': 'true'}),
-        "pool/fs@snap_2": FakeKey('pool/fs@snap_2', {'parent': 'pool/fs@snap_1'}),
-        "pool/fs@snap_3": FakeKey('pool/fs@snap_3', {'parent': 'pool/fs@snap_2', 'is_full': 'false'}),
-        "pool/fs@snap_4": FakeKey('pool/fs@snap_4', {'parent': 'missing_parent'}),  # missing parent
-        "pool/fs@snap_5": FakeKey('pool/fs@snap_5', {'parent': 'pool/fs@snap_4'}),
-        "pool/fs@snap_6": FakeKey('pool/fs@snap_6', {'parent': 'pool/fs@snap_7'}),  # cycle
-        "pool/fs@snap_7": FakeKey('pool/fs@snap_7', {'parent': 'pool/fs@snap_6'}),  # cycle
+        "pool/fs@snap_1": {'is_full': 'true'},
+        "pool/fs@snap_2": {'parent': 'pool/fs@snap_1'},
+        "pool/fs@snap_3": {'parent': 'pool/fs@snap_2', 'is_full': 'false'},
+        "pool/fs@snap_4": {'parent': 'missing_parent'},  # missing parent
+        "pool/fs@snap_5": {'parent': 'pool/fs@snap_4'},
+        "pool/fs@snap_6": {'parent': 'pool/fs@snap_7'},  # cycle
+        "pool/fs@snap_7": {'parent': 'pool/fs@snap_6'},  # cycle
     }
 
     def list(self, *a, **kwa):
         # boto bucket.list gives you keys without metadata, let's emulate that
-        return (FakeKey(name) for name in self.fake_data.iterkeys())
+        return (FakeKey(os.path.join(self.rand_prefix, name)) for name in self.fake_data.iterkeys())
 
-    def get_key(self, name):
-        return self.fake_data.get(name)
+    def get_key(self, key):
+        name = key[len(self.rand_prefix):]
+        return FakeKey(
+            name=key,
+            metadata=self.fake_data[name])
 
 
 def write_s3_data():
@@ -41,9 +49,9 @@ def write_s3_data():
     cfg = get_config()
     bucket = boto.connect_s3(
         cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
-    for fake_key in FakeBucket.fake_data.itervalues():
-        key = bucket.new_key(fake_key.name)
-        headers = {("x-amz-meta-" + k): v for k, v in fake_key.metadata.iteritems()}
+    for name, metadata in FakeBucket.fake_data.iteritems():
+        key = bucket.new_key(os.path.join(FakeBucket.rand_prefix, name))
+        headers = {("x-amz-meta-" + k): v for k, v in metadata.iteritems()}
         key.set_contents_from_string("spam", headers=headers)
     return bucket
 
@@ -60,7 +68,8 @@ def s3_manager(request):
     """This parametrized fixture will cause any test using it to execute twice,
     once using fakes and again using boto and hitting s3.
     """
-    return S3SnapshotManager(request.param(), prefix="pool/fs@snap_")
+    return S3SnapshotManager(
+        request.param(), s3_prefix=FakeBucket.rand_prefix, snapshot_prefix="pool/fs@snap_")
 
 
 def test_list_snapshots(s3_manager):
@@ -191,7 +200,7 @@ class FakeCommandExecutor(CommandExecutor):
         super(FakeCommandExecutor, self).__init__(*a, **kwa)
         self._called_commands = []
 
-    def shell(self, cmd):  # pylint: disable=arguments-differ
+    def shell(self, cmd, dry_run=None):  # pylint: disable=arguments-differ
         self._called_commands.append(cmd)
 
 
@@ -226,23 +235,25 @@ def test_pair_list(pair_manager):
 def test_backup_latest_full(pair_manager):
     pair_manager.backup_full()
     assert pair_manager._cmd._called_commands == [
-        "zfs send 'pool/fs@snap_9' | pput --meta is_full=true pool/fs@snap_9"]
+        "zfs send 'pool/fs@snap_9' | pput --meta is_full=true {}pool/fs@snap_9".format(
+            FakeBucket.rand_prefix)]
 
 
 def test_backup_full(pair_manager):
     pair_manager.backup_full('pool/fs@snap_3')
     assert pair_manager._cmd._called_commands == [
-        "zfs send 'pool/fs@snap_3' | pput --meta is_full=true pool/fs@snap_3"]
+        "zfs send 'pool/fs@snap_3' | pput --meta is_full=true {}pool/fs@snap_3".format(
+            FakeBucket.rand_prefix)]
 
 
 def test_backup_incremental_latest(pair_manager):
     pair_manager.backup_incremental()
-    assert pair_manager._cmd._called_commands == [
-        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
-         "pput --meta parent=pool/fs@snap_3 pool/fs@snap_8"),
-        ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
-         "pput --meta parent=pool/fs@snap_8 pool/fs@snap_9")
+    expected = [
+        "zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | pput --meta parent=pool/fs@snap_3 {}pool/fs@snap_8",
+        "zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | pput --meta parent=pool/fs@snap_8 {}pool/fs@snap_9"
     ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in expected]
+    assert pair_manager._cmd._called_commands == expected
 
 
 def test_backup_incremental_missing_parent(s3_manager):
