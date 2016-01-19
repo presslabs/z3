@@ -68,6 +68,9 @@ def write_s3_data():
 def s3_manager(request):
     """This parametrized fixture will cause any test using it to execute twice,
     once using fakes and again using boto and hitting s3.
+
+    The tests don't actually write to the bucket so we can share the same S3SnapshotManager
+    across all tests.
     """
     return S3SnapshotManager(
         request.param(), s3_prefix=FakeBucket.rand_prefix, snapshot_prefix="pool/fs@snap_")
