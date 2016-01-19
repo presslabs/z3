@@ -257,6 +257,9 @@ class PairManager(object):
         )
 
     def backup_incremental(self, snap_name=None, dry_run=False):
+        """Uploads named snapshot or latest, along with any other snapshots
+        required for an incremental backup.
+        """
         z_snap = self._snapshot_to_backup(snap_name)
         to_upload = []
         current = z_snap
