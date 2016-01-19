@@ -15,7 +15,8 @@ setup(
     entry_points={
         'console_scripts': [
             'pput = z3.pput:main',
-            'z3 = z3.snap:main'
+            'z3 = z3.snap:main',
+            'z3_get = z3.get:main'
         ]
     },
     test_requirements=["pytest>=2.8.5"]

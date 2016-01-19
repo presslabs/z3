@@ -22,13 +22,13 @@ class FakeKey(object):
 class FakeBucket(object):
     rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'
     fake_data = {
-        "pool/fs@snap_1": {'is_full': 'true'},
-        "pool/fs@snap_2": {'parent': 'pool/fs@snap_1'},
+        "pool/fs@snap_1_f": {'is_full': 'true'},
+        "pool/fs@snap_2": {'parent': 'pool/fs@snap_1_f'},
         "pool/fs@snap_3": {'parent': 'pool/fs@snap_2', 'is_full': 'false'},
-        "pool/fs@snap_4": {'parent': 'missing_parent'},  # missing parent
-        "pool/fs@snap_5": {'parent': 'pool/fs@snap_4'},
-        "pool/fs@snap_6": {'parent': 'pool/fs@snap_7'},  # cycle
-        "pool/fs@snap_7": {'parent': 'pool/fs@snap_6'},  # cycle
+        "pool/fs@snap_4_mp": {'parent': 'missing_parent'},  # missing parent
+        "pool/fs@snap_5": {'parent': 'pool/fs@snap_4_mp'},
+        "pool/fs@snap_6_cycle": {'parent': 'pool/fs@snap_7_cycle'},  # cycle
+        "pool/fs@snap_7_cycle": {'parent': 'pool/fs@snap_6_cycle'},  # cycle
     }
 
     def list(self, *a, **kwa):
@@ -74,13 +74,13 @@ def s3_manager(request):
 
 def test_list_snapshots(s3_manager):
     snapshots = sorted(s3_manager.list(), key=lambda el: el.name)
-    expected = ["pool/fs@snap_1", "pool/fs@snap_2", "pool/fs@snap_3", "pool/fs@snap_4",
-                "pool/fs@snap_5", "pool/fs@snap_6", "pool/fs@snap_7"]
+    expected = sorted(["pool/fs@snap_1_f", "pool/fs@snap_2", "pool/fs@snap_3", "pool/fs@snap_4_mp",
+                       "pool/fs@snap_5", "pool/fs@snap_6_cycle", "pool/fs@snap_7_cycle"])
     assert [s.name for s in snapshots] == expected
 
 
 def test_healthy_full(s3_manager):
-    snap = s3_manager.get('pool/fs@snap_1')
+    snap = s3_manager.get('pool/fs@snap_1_f')
     assert snap.is_full
     assert snap.is_healthy
 
@@ -100,7 +100,7 @@ def test_unhealthy_incremental(s3_manager):
 
 
 def test_unhealthy_cycle(s3_manager):
-    snap = s3_manager.get('pool/fs@snap_7')
+    snap = s3_manager.get('pool/fs@snap_7_cycle')
     assert snap.is_full is False
     assert snap.is_healthy is False
     assert snap.reason_broken == 'cycle detected'
@@ -113,7 +113,7 @@ class FakeZFSManager(ZFSSnapshotManager):
         'pool@snap_p1\t0\t19K\t-\t19K\n'
         'pool@snap_p2\t0\t19K\t-\t0\n'
 
-        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@funky_name\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
@@ -146,8 +146,8 @@ def test_list_local_snapshots():
             }),
         ]),
         'pool/fs': OrderedDict([
-            ('snap_1', {
-                'name': 'pool/fs@snap_1',
+            ('snap_1_f', {
+                'name': 'pool/fs@snap_1_f',
                 'mountpoint': '-', 'refer': '10.0M', 'used': '10.0M', 'written': '10.0M',}),
             ('funky_name', {
                 'name': 'pool/fs@funky_name',
@@ -178,8 +178,8 @@ def test_list_local_snapshots():
 
 
 @pytest.mark.parametrize("fs_name, expected", [
-    ('pool/fs', [('pool/fs@snap_1', None),
-                 ('pool/fs@snap_2', 'pool/fs@snap_1'),
+    ('pool/fs', [('pool/fs@snap_1_f', None),
+                 ('pool/fs@snap_2', 'pool/fs@snap_1_f'),
                  ('pool/fs@snap_3', 'pool/fs@snap_2'),
                  ('pool/fs@snap_8', 'pool/fs@snap_3'),
                  ('pool/fs@snap_9', 'pool/fs@snap_8')]),
@@ -219,16 +219,16 @@ def test_pair_list(pair_manager):
         (name(s3_snap), name(z_snap))
         for (s3_snap, z_snap) in pairs]
     expected = [
-        ('pool/fs@snap_1', 'pool/fs@snap_1'),
+        ('pool/fs@snap_1_f', 'pool/fs@snap_1_f'),
         ('pool/fs@snap_2', 'pool/fs@snap_2'),
         ('pool/fs@snap_3', 'pool/fs@snap_3'),
         (None, 'pool/fs@snap_8'),  # snap_8 doesn't exist in the s3 fixture
         (None, 'pool/fs@snap_9'),  # snap_9 doesn't exist in the s3 fixture
         # s3-only snapshot pairs are listed last
-        ('pool/fs@snap_4', None),
+        ('pool/fs@snap_4_mp', None),
         ('pool/fs@snap_5', None),
-        ('pool/fs@snap_6', None),
-        ('pool/fs@snap_7', None),
+        ('pool/fs@snap_6_cycle', None),
+        ('pool/fs@snap_7_cycle', None),
     ]
     assert names == expected
 
@@ -261,10 +261,10 @@ def test_backup_incremental_missing_parent(s3_manager):
     expected = (
         'pool@p1\t0\t19K\t-\t19K\n'
         'pool@p2\t0\t19K\t-\t0\n'
-        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_4\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_4_mp\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_5\t10.0M\t10.0M\t-\t10.0M\n'
     )
     zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
@@ -280,16 +280,71 @@ def test_backup_incremental_cycle(s3_manager):
     expected = (
         'pool@p1\t0\t19K\t-\t19K\n'
         'pool@p2\t0\t19K\t-\t0\n'
-        'pool/fs@snap_1\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_6\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_7\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_6_cycle\t10.0M\t10.0M\t-\t10.0M\n'  # these have bad metadata on s3
+        'pool/fs@snap_7_cycle\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
     )
     zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
     fake_cmd = FakeCommandExecutor()
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.backup_incremental()
-    assert excp_info.value.message == "Broken snapshot detected pool/fs@snap_7, reason: 'cycle detected'"
+    assert excp_info.value.message == "Broken snapshot detected pool/fs@snap_7_cycle, reason: 'cycle detected'"
     assert fake_cmd._called_commands == []
+
+
+def test_restore_full(s3_manager):
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'  # we have no pool/fs snapshots locally
+        'pool@p2\t0\t19K\t-\t0\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.restore('pool/fs@snap_1_f')
+    expected = "z3_get {}pool/fs@snap_1_f | zfs recv pool/fs@snap_1_f".format(
+        FakeBucket.rand_prefix)
+    assert fake_cmd._called_commands == [expected]
+
+
+def test_restore_complete_incremental(s3_manager):
+    """Tests incremental restore on a zfs dataset with no snapshots"""
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'  # we have no pool/fs snapshots locally
+        'pool@p2\t0\t19K\t-\t0\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.restore('pool/fs@snap_3')  # ask for an incremental snapshot
+    # all incremental snapshots until we hit a full snapshot are expected
+    expected = [
+        "z3_get {}pool/fs@snap_1_f | zfs recv pool/fs@snap_1_f",
+        "z3_get {}pool/fs@snap_2 | zfs recv pool/fs@snap_2",
+        "z3_get {}pool/fs@snap_3 | zfs recv pool/fs@snap_3",
+    ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in expected]
+    assert fake_cmd._called_commands == expected
+
+
+def test_restore_incremental(s3_manager):
+    """Tests incremental restore on a zfs dataset with existing snapshots"""
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'
+        'pool@p2\t0\t19K\t-\t0\n'
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.restore('pool/fs@snap_3')  # ask for an incremental snapshot
+    # all incremental snapshots until we hit a full snapshot are expected
+    expected = [
+        "z3_get {}pool/fs@snap_3 | zfs recv pool/fs@snap_3",
+    ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in expected]
+    assert fake_cmd._called_commands == expected
