@@ -1,12 +1,14 @@
 from cStringIO import StringIO
+from datetime import datetime
 from Queue import Queue
 from uuid import uuid4
 import hashlib
 
+import boto
 import pytest
 
 from z3.pput import (UploadSupervisor, UploadWorker, StreamHandler,
-                     Result, WorkerCrashed, multipart_etag)
+                     Result, WorkerCrashed, multipart_etag, parse_metadata)
 from z3.config import get_config
 
 
@@ -134,3 +136,23 @@ def test_supervisor_loop_with_worker_crash(sample_data):
     sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
     with pytest.raises(WorkerCrashed):
         sup.main_loop(worker_class=ErrorWorker)
+
+
+@pytest.mark.with_s3
+def test_integration(sample_data):
+    cfg = get_config()
+    stream_handler = StreamHandler(sample_data)
+    bucket = boto.connect_s3(
+        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
+    key_name = "z3_test_" + datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    sup = UploadSupervisor(
+        stream_handler,
+        key_name,
+        bucket=bucket,
+        headers=parse_metadata(["ana=are+mere", "dana=are=pere"])
+    )
+    etag = sup.main_loop()
+    uploaded = bucket.get_key(key_name)
+    assert etag == '"d229c1fc0e509475afe56426c89d2724-2"'
+    assert etag == uploaded.etag
+    assert uploaded.metadata == {"ana": "are+mere", "dana": "are=pere"}
