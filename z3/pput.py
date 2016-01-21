@@ -13,6 +13,7 @@ import argparse
 import binascii
 import functools
 import hashlib
+import logging
 import json
 import os
 import sys

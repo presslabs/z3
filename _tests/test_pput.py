@@ -8,7 +8,8 @@ import boto
 import pytest
 
 from z3.pput import (UploadSupervisor, UploadWorker, StreamHandler,
-                     Result, WorkerCrashed, multipart_etag, parse_metadata)
+                     Result, WorkerCrashed, multipart_etag, parse_metadata,
+                     retry)
 from z3.config import get_config
 
 
@@ -138,20 +139,23 @@ def test_supervisor_loop_with_worker_crash(sample_data):
         sup.main_loop(worker_class=ErrorWorker)
 
 
-class Boom(object):
-    def __init__(self, raise_on=3):
-        self.count = 0
-        self.raise_on = raise_on
+class BoomException(Exception):
+    pass
 
+
+class Boom(object):
+    def __init__(self):
+        self.count = 0
+
+    @retry(3)
     def call(self):
         self.count += 1
-        if self.count == self.raise_on:
-            raise Exception("Boom!")
+        raise BoomException("Boom!")
 
 
 def test_retry_decorator():
-    boom = Boom(3)
-    with pytest.raises(Exception) as excp_info:
+    boom = Boom()
+    with pytest.raises(BoomException) as excp_info:
         for _ in xrange(3):
             boom.call()
     assert boom.count == 3
