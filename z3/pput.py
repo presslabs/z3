@@ -81,17 +81,20 @@ class StreamHandler(object):
         return int(size)
 
 
-@functools.wraps
-def retry(func):
-    def wrapped(*a, **kwa):
-        times = int(CFG['max_retries'])
-        for attempt in xrange(times):
-            try:
-                return func(*a, **kwa)
-            except: # pylint: disable=bare-except
-                if attempt+1 >= times:
-                    raise
-    return wrapped
+def retry(times=int(CFG['MAX_RETRIES'])):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(*a, **kwa):
+            for attempt in xrange(1, times+1):
+                try:
+                    return func(*a, **kwa)
+                except: # pylint: disable=bare-except
+                    if attempt >= times:
+                        raise
+                    logging.exception('Failed to upload part attempt {} of {}'.format(
+                        attempt, times))
+        return wrapped
+    return decorator
 
 
 class WorkerCrashed(Exception):
@@ -107,7 +110,7 @@ class UploadWorker(object):
         self._thread = None
         self.log = getLogger('UploadWorker')
 
-    @retry
+    @retry()
     def upload_part(self, index, chunk):
         part = boto.s3.multipart.MultiPartUpload(self.bucket)
         part.id = self.multipart.id

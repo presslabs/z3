@@ -138,6 +138,25 @@ def test_supervisor_loop_with_worker_crash(sample_data):
         sup.main_loop(worker_class=ErrorWorker)
 
 
+class Boom(object):
+    def __init__(self, raise_on=3):
+        self.count = 0
+        self.raise_on = raise_on
+
+    def call(self):
+        self.count += 1
+        if self.count == self.raise_on:
+            raise Exception("Boom!")
+
+
+def test_retry_decorator():
+    boom = Boom(3)
+    with pytest.raises(Exception) as excp_info:
+        for _ in xrange(3):
+            boom.call()
+    assert boom.count == 3
+
+
 @pytest.mark.with_s3
 def test_integration(sample_data):
     cfg = get_config()
