@@ -192,7 +192,7 @@ class UploadSupervisor(object):
         result = self.inbox.get()
         if result.success:
             if not self._quiet:
-                sys.stderr.write("uploaded chunk {} \n".format(result.index))
+                sys.stderr.write("\nuploaded chunk {} \n".format(result.index))
             self.results.append((result.index, result.md5))
             self._pending_chunks -= 1
         else:
