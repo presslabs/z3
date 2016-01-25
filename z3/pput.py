@@ -44,10 +44,26 @@ def multipart_etag(digests):
     return '"{}-{}"'.format(etag.hexdigest(), count)
 
 
+def parse_size(size):
+    if isinstance(size, (int, long)):
+        return size
+    size = size.strip().upper()
+    last = size[-1]
+    if last == 'T':
+        return int(size[:-1]) * 1024 * 1024 * 1024 * 1024
+    if last == 'G':
+        return int(size[:-1]) * 1024 * 1024 * 1024
+    if last == 'M':
+        return int(size[:-1]) * 1024 * 1024
+    if last == 'K':
+        return int(size[:-1]) * 1024
+    return int(size)
+
+
 class StreamHandler(object):
     def __init__(self, input_stream, chunk_size=5*1024*1024):
         self.input_stream = input_stream
-        self.chunk_size = self._parse_chunksize(chunk_size)
+        self.chunk_size = chunk_size
         self._partial_chunk = ""
         self._eof_reached = False
 
@@ -66,20 +82,8 @@ class StreamHandler(object):
                 chunk = self._partial_chunk
                 self._partial_chunk = ""
                 return chunk
-
-    @staticmethod
-    def _parse_chunksize(size):
-        if isinstance(size, (int, long)):
-            return size
-        size = size.strip().upper()
-        last = size[-1]
-        if last == 'G':
-            return int(size[:-1]) * 1024 * 1024 * 1024
-        if last == 'M':
-            return int(size[:-1]) * 1024 * 1024
-        if last == 'K':
-            return int(size[:-1]) * 1024
-        return int(size)
+            # else:
+            #     print "partial", len(self._partial_chunk)
 
 
 def retry(times=int(CFG['MAX_RETRIES'])):
@@ -253,6 +257,14 @@ def parse_metadata(metadata):
     return headers
 
 
+def optimize_chunksize(estimated):
+    max_parts = 9999  # S3 requires part indexes to be between 1 and 10000
+    # part size has to be at least 5MB
+    estimated = estimated * 1.05  # just to be on the safe side overesimate the total size to upload
+    min_part_size = max(estimated / max_parts, 5*1024*1024)
+    return min_part_size
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Read data from stdin and upload it to s3',
@@ -262,10 +274,13 @@ def main():
                 ' then default config.'),
     )
     parser.add_argument('name', help='name of S3 key')
-    parser.add_argument('-s', '--chunk-size',
-                        dest='chunk_size',
-                        default=CFG['CHUNK_SIZE'],
-                        help='multipart chunk size, eg: 10M, 1G')
+    chunk_group = parser.add_mutually_exclusive_group()
+    chunk_group.add_argument('-s', '--chunk-size',
+                             dest='chunk_size',
+                             default=CFG['CHUNK_SIZE'],
+                             help='multipart chunk size, eg: 10M, 1G')
+    chunk_group.add_argument('--estimated',
+                             help='Estimated upload size')
     parser.add_argument('--file-descriptor',
                         dest='file_descriptor',
                         type=int,
@@ -289,7 +304,11 @@ def main():
     args = parser.parse_args()
 
     input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
-    stream_handler = StreamHandler(input_fd, chunk_size=args.chunk_size)
+    if args.estimated is not None:
+        chunk_size = optimize_chunksize(parse_size(args.estimated))
+    else:
+        chunk_size = parse_size(args.chunk_size)
+    stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
     bucket = boto.connect_s3(
         CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
     sup = UploadSupervisor(
@@ -301,7 +320,7 @@ def main():
     )
     if not args.quiet:
         sys.stderr.write("starting upload to {}/{} with chunksize {} using {} workers\n".format(
-            CFG['BUCKET'], args.name, args.chunk_size, args.concurrency))
+            CFG['BUCKET'], args.name, chunk_size, args.concurrency))
     etag = sup.main_loop(concurrency=args.concurrency)
     print json.dumps({'status': 'success', 'etag': etag})
 

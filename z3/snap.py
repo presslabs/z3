@@ -247,12 +247,22 @@ class PairManager(object):
                 raise Exception('Failed to get the snapshot {}'.format(snap_name))
         return z_snap
 
+    @staticmethod
+    def _parse_estimated_size(output):
+        size_line = output.splitlines()[-1]
+        _, size = size_line.split(" ")
+        return int(size)
+
     def backup_full(self, snap_name=None, dry_run=False):
         """Do a full backup of a snapshot. By default latest local snapshot"""
         z_snap = self._snapshot_to_backup(snap_name)
+        estimated_size = self._parse_estimated_size(
+            self._cmd.shell(
+                "zfs send -nvP '{}'".format(z_snap.name)))
         self._cmd.pipe(
             "zfs send '{}'".format(z_snap.name),
-            "pput --meta is_full=true {}{}".format(self.s3_manager.s3_prefix, z_snap.name),
+            "pput --estimated {} --meta is_full=true {}{}".format(
+                estimated_size, self.s3_manager.s3_prefix, z_snap.name),
             dry_run=dry_run,
         )
 
@@ -278,11 +288,15 @@ class PairManager(object):
                 break
             current = current.parent
         for z_snap in reversed(to_upload):
+            estimated_size = self._parse_estimated_size(
+                self._cmd.shell(
+                    "zfs send -nvP -i '{}' '{}'".format(
+                    z_snap.parent.name, z_snap.name)))
             self._cmd.pipe(
                 "zfs send -i '{}' '{}'".format(
                     z_snap.parent.name, z_snap.name),
-                "pput --meta parent={} {}{}".format(
-                    z_snap.parent.name, self.s3_manager.s3_prefix, z_snap.name),
+                "pput --estimated {} --meta parent={} {}{}".format(
+                    estimated_size, z_snap.parent.name, self.s3_manager.s3_prefix, z_snap.name),
                 dry_run=dry_run,
             )
 

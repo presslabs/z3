@@ -214,9 +214,11 @@ class FakeCommandExecutor(CommandExecutor):
     def __init__(self, *a, **kwa):
         super(FakeCommandExecutor, self).__init__(*a, **kwa)
         self._called_commands = []
+        self._expected = "\nsize 1234"  # currently we only need the output of 'zfs send -nvP' in the tests
 
     def shell(self, cmd, dry_run=None):  # pylint: disable=arguments-differ
         self._called_commands.append(cmd)
+        return self._expected
 
 
 @pytest.fixture
@@ -250,16 +252,24 @@ def test_pair_list(pair_manager):
 
 def test_backup_latest_full(pair_manager):
     pair_manager.backup_full()
+    expected = [
+        "zfs send -nvP 'pool/fs@snap_9'",
+        ("zfs send 'pool/fs@snap_9' | "
+         "pput --estimated 1234 --meta is_full=true {}pool/fs@snap_9")]
     assert pair_manager._cmd._called_commands == [
-        "zfs send 'pool/fs@snap_9' | pput --meta is_full=true {}pool/fs@snap_9".format(
-            FakeBucket.rand_prefix)]
+        e.format(FakeBucket.rand_prefix)
+        for e in expected]
 
 
 def test_backup_full(pair_manager):
     pair_manager.backup_full('pool/fs@snap_3')
+    expected = [
+        "zfs send -nvP 'pool/fs@snap_3'",
+        ("zfs send 'pool/fs@snap_3' | "
+         "pput --estimated 1234 --meta is_full=true {}pool/fs@snap_3")]
     assert pair_manager._cmd._called_commands == [
-        "zfs send 'pool/fs@snap_3' | pput --meta is_full=true {}pool/fs@snap_3".format(
-            FakeBucket.rand_prefix)]
+        e.format(FakeBucket.rand_prefix)
+        for e in expected]
 
 
 def test_backup_incremental_latest(pair_manager):
@@ -267,10 +277,12 @@ def test_backup_incremental_latest(pair_manager):
     # snap_8 and snap_9 exist locally but not in s3
     # snap_8 comes after snap_3
     zfs_list = [
-        "zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "\
-        "pput --meta parent=pool/fs@snap_3 {}pool/fs@snap_8",
-        "zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "\
-        "pput --meta parent=pool/fs@snap_8 {}pool/fs@snap_9"
+        "zfs send -nvP -i 'pool/fs@snap_3' 'pool/fs@snap_8'",
+        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
+         "pput --estimated 1234 --meta parent=pool/fs@snap_3 {}pool/fs@snap_8"),
+        "zfs send -nvP -i 'pool/fs@snap_8' 'pool/fs@snap_9'",
+        ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
+         "pput --estimated 1234 --meta parent=pool/fs@snap_8 {}pool/fs@snap_9")
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in zfs_list]
     assert pair_manager._cmd._called_commands == expected
