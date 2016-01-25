@@ -199,12 +199,16 @@ class ZFSSnapshotManager(object):
 
 class CommandExecutor(object):
     @staticmethod
-    def shell(cmd, dry_run=False):
+    def shell(cmd, dry_run=False, capture=False):
         if dry_run:
             print cmd
         else:
-            return subprocess.check_output(
-                cmd, shell=True, stderr=subprocess.STDOUT)
+            if capture:
+                return subprocess.check_output(
+                    cmd, shell=True, stderr=subprocess.STDOUT)
+            else:
+                return subprocess.check_call(
+                    cmd, shell=True)
 
     @property
     @cached
@@ -263,7 +267,8 @@ class PairManager(object):
         z_snap = self._snapshot_to_backup(snap_name)
         estimated_size = self._parse_estimated_size(
             self._cmd.shell(
-                "zfs send -nvP '{}'".format(z_snap.name)))
+                "zfs send -nvP '{}'".format(z_snap.name),
+                capture=True))
         self._cmd.pipe(
             "zfs send '{}'".format(z_snap.name),
             "pput --estimated {} --meta is_full=true {}{}".format(
@@ -296,7 +301,8 @@ class PairManager(object):
             estimated_size = self._parse_estimated_size(
                 self._cmd.shell(
                     "zfs send -nvP -i '{}' '{}'".format(
-                    z_snap.parent.name, z_snap.name)))
+                        z_snap.parent.name, z_snap.name),
+                    capture=True))
             self._cmd.pipe(
                 "zfs send -i '{}' '{}'".format(
                     z_snap.parent.name, z_snap.name),

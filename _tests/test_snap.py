@@ -216,7 +216,7 @@ class FakeCommandExecutor(CommandExecutor):
         self._called_commands = []
         self._expected = "\nsize 1234"  # currently we only need the output of 'zfs send -nvP' in the tests
 
-    def shell(self, cmd, dry_run=None):  # pylint: disable=arguments-differ
+    def shell(self, cmd, dry_run=None, capture=None):  # pylint: disable=arguments-differ
         self._called_commands.append(cmd)
         return self._expected
 
