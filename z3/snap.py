@@ -250,9 +250,13 @@ class PairManager(object):
 
     @staticmethod
     def _parse_estimated_size(output):
-        size_line = output.splitlines()[-1]
-        _, size = size_line.split(" ")
-        return int(size)
+        try:
+            size_line = [line for line in output.splitlines() if len(line)][-1]
+            _, size = size_line.split()
+            return int(size)
+        except:
+            logging.error("failed to parse output '%s'", output)
+            raise
 
     def backup_full(self, snap_name=None, dry_run=False):
         """Do a full backup of a snapshot. By default latest local snapshot"""
