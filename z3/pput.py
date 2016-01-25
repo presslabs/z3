@@ -319,8 +319,8 @@ def main():
         headers=parse_metadata(args.metadata),
     )
     if not args.quiet:
-        sys.stderr.write("starting upload to {}/{} with chunksize {} using {} workers\n".format(
-            CFG['BUCKET'], args.name, chunk_size, args.concurrency))
+        sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
+            CFG['BUCKET'], args.name, (chunk_size/(1024*1024.0)), args.concurrency))
     etag = sup.main_loop(concurrency=args.concurrency)
     print json.dumps({'status': 'success', 'etag': etag})
 
