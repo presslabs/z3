@@ -203,7 +203,8 @@ class CommandExecutor(object):
         if dry_run:
             print cmd
         else:
-            subprocess.check_call(cmd, shell=True)
+            return subprocess.check_output(
+                cmd, shell=True, stderr=subprocess.STDOUT)
 
     @property
     @cached
