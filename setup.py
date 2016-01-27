@@ -19,5 +19,5 @@ setup(
             'z3_get = z3.get:main'
         ]
     },
-    test_requirements=["pytest>=2.8.5"]
+    test_requires=["pytest>=2.8.5"]
 )
