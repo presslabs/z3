@@ -1,12 +1,8 @@
-## z3 ZFS to S3 backup tool
+# z3 ZFS to S3 backup tool
 
 [![Build Status](https://travis-ci.org/PressLabs/z3.svg)](https://travis-ci.org/PressLabs/z3)
 
-# z3
-z3 lists the s3 bucket and the local snapshots, compares the two,
-determines what needs uploading and then calls `zfs send ... | pput ...`
-
-## Usage
+### Usage
 `z3 status` will show you the current state, what snapshots you have on S3 and on the local
 zfs dataset.
 
@@ -16,7 +12,7 @@ zfs dataset.
 
 See `zfs SUBCOMMAND --help` for more info.
 
-## Configuring
+### Configuring
 Most options can be configured as command line flags, environment variables or in a config file,
 in that order of precedence.
 
@@ -26,9 +22,9 @@ BUCKET S3_KEY_ID and S3_KEY_SECRET can't be provided on the command line.
 
 For a list of all options see z3/sample.cfg
 
-# Development Overview
+## Development Overview
 
-## The data
+### The data
 Snapshots are optained using `zfs send`.
 Incremental snapshots are always 'squashed', so if you have multiple snapshots to send
 since the last time you've performed a backup they get exported as individual snapshots
@@ -40,13 +36,13 @@ The parent of an incremental snapshot is identified with the `parent` attribute'
 
 S3 and ZFS snapshots are matched by name.
 
-## Health checks
+### Health checks
 The S3 health checks are very rudimentary, basically if a snapshot is incremntal check
 that the parent exists and is healthy. Full backups are always assumed healthy.
 
 If backup/restore encounter unhealthy snapshots they abort execution.
 
-## pput
+### pput
 pput is a simple tool with one job, read data from stdin and upload it to S3.
 It's usually invoked by z3.
 
