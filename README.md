@@ -12,13 +12,18 @@ zfs dataset.
 
 See `zfs SUBCOMMAND --help` for more info.
 
+### Installing
+TODO
+
+z3 is tested on python 2.7 with boto 2.2.2 (python-boto version on ubuntu 12.04) and latest.
+
 ### Configuring
 Most options can be configured as command line flags, environment variables or in a config file,
 in that order of precedence.
 
 The config file is read from /etc/z3_backup/z3.conf if it exists, some defaults are provided by the tool.
 
-BUCKET S3_KEY_ID and S3_KEY_SECRET can't be provided on the command line.
+BUCKET S3_KEY_ID and S3_SECRET can't be provided on the command line.
 
 For a list of all options see z3/sample.conf
 
