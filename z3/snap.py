@@ -399,7 +399,7 @@ def main():
     parser.add_argument('--snapshot-prefix',
                         dest='snapshot_prefix',
                         default=cfg.get('SNAPSHOT_PREFIX', 'zfs-auto-snap:daily'),
-                        help='only look at snapshots that start with this prefix')
+                        help='ignore snapshots that start with this prefix')
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
     backup_parser = subparsers.add_parser(
