@@ -1,1 +1,1 @@
-include LICENSE README.md z3/z3.cfg
+include LICENSE README.md z3/z3.conf

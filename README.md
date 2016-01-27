@@ -16,11 +16,11 @@ See `zfs SUBCOMMAND --help` for more info.
 Most options can be configured as command line flags, environment variables or in a config file,
 in that order of precedence.
 
-The config file is read from /etc/z3_backup/z3.cfg if it exists, some defaults are provided by the tool.
+The config file is read from /etc/z3_backup/z3.conf if it exists, some defaults are provided by the tool.
 
 BUCKET S3_KEY_ID and S3_KEY_SECRET can't be provided on the command line.
 
-For a list of all options see z3/sample.cfg
+For a list of all options see z3/sample.conf
 
 ## Development Overview
 

@@ -39,9 +39,9 @@ def get_config():
     global _settings
     if _settings is None:
         _config = ConfigParser.ConfigParser()
-        default = os.path.join(z3.__path__[0], "z3.cfg")
+        default = os.path.join(z3.__path__[0], "z3.conf")
         _config.read(default)
-        _config.read("/etc/z3_backup/z3.cfg")
+        _config.read("/etc/z3_backup/z3.conf")
         _settings = OnionDict(
             os.environ,  # env variables take precedence
             dict((k.upper(), v) for k, v in _config.items("main"))
