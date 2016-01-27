@@ -25,7 +25,7 @@ For a list of all options see z3/sample.cfg
 ## Development Overview
 
 ### The data
-Snapshots are optained using `zfs send`.
+Snapshots are obtained using `zfs send`.
 Incremental snapshots are always 'squashed', so if you have multiple snapshots to send
 since the last time you've performed a backup they get exported as individual snapshots
 (multiple calls to `zfs send -i dataset@snapA dataset@snapB`).
@@ -37,7 +37,7 @@ The parent of an incremental snapshot is identified with the `parent` attribute'
 S3 and ZFS snapshots are matched by name.
 
 ### Health checks
-The S3 health checks are very rudimentary, basically if a snapshot is incremntal check
+The S3 health checks are very rudimentary, basically if a snapshot is incremental check
 that the parent exists and is healthy. Full backups are always assumed healthy.
 
 If backup/restore encounter unhealthy snapshots they abort execution.
