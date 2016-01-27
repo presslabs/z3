@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="z3",
-    version="0.1",
+    version="0.1.1",
     platforms='any',
     packages=find_packages(),
     include_package_data=True,
@@ -11,7 +11,7 @@ setup(
     author="PressLabs SRL",
     author_email="contact@presslabs.com",
     url="https://github.com/presslabs/z3",
-    description="z3",
+    description="Backup ZFS snapshots to S3",
     entry_points={
         'console_scripts': [
             'pput = z3.pput:main',
@@ -19,5 +19,12 @@ setup(
             'z3_get = z3.get:main'
         ]
     },
-    test_requires=["pytest>=2.8.5"]
+    keywords='ZFS backup',
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Environment :: Console",
+        "License :: OSI Approved :: Apache Software License",
+        "Topic :: System :: Archiving :: Backup",
+        "Topic :: Utilities",
+    ],
 )
