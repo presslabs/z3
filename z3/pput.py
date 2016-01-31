@@ -82,8 +82,8 @@ class StreamHandler(object):
                 chunk = self._partial_chunk
                 self._partial_chunk = ""
                 return chunk
-            # else:
-            #     print "partial", len(self._partial_chunk)
+            else:
+                print "partial", len(self._partial_chunk)
 
 
 def retry(times=int(CFG['MAX_RETRIES'])):
@@ -104,6 +104,13 @@ def retry(times=int(CFG['MAX_RETRIES'])):
 
 class WorkerCrashed(Exception):
     pass
+
+
+class StringBasedFile(object):
+    '''A read only file-like object that wrapps a string
+    Boto needs a file for multipart uploads, but we already have a string.
+    Avoids a large memory copy for cStringIO
+    '''
 
 
 class UploadWorker(object):
@@ -143,6 +150,22 @@ class UploadWorker(object):
                 traceback=None,
                 index=index,
             ))
+
+
+class DevNullWorker(UploadWorker):
+    @retry()
+    def upload_part(self, index, chunk):
+        digest = hashlib.md5()
+        in_file = StringIO(chunk)
+        chunk_size = 1024*1024*4
+        with open('/dev/null', 'w') as devnull:
+            while True:
+                chunk = in_file.read(chunk_size)
+                if chunk == '':
+                    return
+                digest.update(chunk)
+                devnull.write(chunk)
+        return digest.hexdigest()
 
 
 class UploadSupervisor(object):
@@ -226,7 +249,8 @@ class UploadSupervisor(object):
 
     def main_loop(self, concurrency=4, worker_class=UploadWorker):
         chunk_index = 0
-        self._begin_upload()
+        if worker_class is not DevNullWorker:
+            self._begin_upload()
         self._workers = self._start_workers(concurrency, worker_class=worker_class)
         while self._pending_chunks or not self.stream_handler.finished:
             self._check_workers()  # raise exception and stop everything if any worker has crashed
@@ -239,9 +263,10 @@ class UploadSupervisor(object):
                 # s3 multipart index is 1 based, increment before sending
                 chunk_index += 1
                 self._send_chunk(chunk_index, chunk)
-        self._finish_upload()
+        if worker_class is not DevNullWorker:
+            self._finish_upload()
         self.results.sort()
-        return multipart_etag(r[1] for r in self.results)
+        return multipart_etag(r[1] for r in self.results) if worker_class is not DevNullWorker else ""
 
 
 def parse_metadata(metadata):
@@ -301,6 +326,10 @@ def main():
                         dest='quiet',
                         action='store_true',
                         help=('suppress progress report'))
+    parser.add_argument('--devnull',
+                        dest='devnull',
+                        action='store_true',
+                        help='Write content to /dev/null to test execution model overhead')
     args = parser.parse_args()
 
     input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
@@ -309,8 +338,12 @@ def main():
     else:
         chunk_size = parse_size(args.chunk_size)
     stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
-    bucket = boto.connect_s3(
-        CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
+    # import yappi; yappi.start()
+    if args.devnull is False:
+        bucket = boto.connect_s3(
+            CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
+    else:
+        bucket = None
     sup = UploadSupervisor(
         stream_handler,
         args.name,
@@ -321,8 +354,13 @@ def main():
     if not args.quiet:
         sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
             CFG['BUCKET'], args.name, (chunk_size/(1024*1024.0)), args.concurrency))
-    etag = sup.main_loop(concurrency=args.concurrency)
-    print json.dumps({'status': 'success', 'etag': etag})
+    worker_class = DevNullWorker if args.devnull is True else UploadWorker
+    etag = sup.main_loop(concurrency=args.concurrency, worker_class=worker_class)
+    
+    # yappi.get_func_stats().print_all()
+
+    # yappi.get_thread_stats().print_all()
+    # print json.dumps({'status': 'success', 'etag': etag})
 
 
 if __name__ == '__main__':
