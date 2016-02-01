@@ -145,6 +145,10 @@ class UploadWorker(object):
             ))
 
 
+class UploadException(Exception):
+    pass
+
+
 class UploadSupervisor(object):
     '''Reads chunks and dispatches them to UploadWorkers'''
 
@@ -188,6 +192,9 @@ class UploadSupervisor(object):
         self.multipart = self.bucket.initiate_multipart_upload(self.name, headers=headers)
 
     def _finish_upload(self):
+        if len(self.results) == 0:
+            self.multipart.cancel_upload()
+            raise UploadException("Error: Can't upload zero bytes!")
         return self.multipart.complete_upload()
 
     def _handle_result(self):
@@ -321,7 +328,11 @@ def main():
     if not args.quiet:
         sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
             CFG['BUCKET'], args.name, (chunk_size/(1024*1024.0)), args.concurrency))
-    etag = sup.main_loop(concurrency=args.concurrency)
+    try:
+        etag = sup.main_loop(concurrency=args.concurrency)
+    except UploadException as excp:
+        sys.stderr.write("{}\n".format(excp))
+        return 1
     print json.dumps({'status': 'success', 'etag': etag})
 
 

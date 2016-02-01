@@ -9,7 +9,7 @@ import pytest
 
 from z3.pput import (UploadSupervisor, UploadWorker, StreamHandler,
                      Result, WorkerCrashed, multipart_etag, parse_metadata,
-                     retry)
+                     retry, UploadException)
 from z3.config import get_config
 
 
@@ -94,11 +94,17 @@ class FakeMultipart(object):
         self.id = str(uuid4())
         self.key_name = str(uuid4())
         self._completed = False
+        self._canceled = False
 
     def complete_upload(self):
         if self._completed:
             raise AssertionError('multipart already completed')
         self._completed = True
+
+    def cancel_upload(self):
+        if self._canceled:
+            raise AssertionError('multipart already canceled')
+        self._canceled = True
 
 
 class FakeBucket(object):
@@ -122,6 +128,15 @@ def test_supervisor_loop(sample_data):
     etag = sup.main_loop(worker_class=DummyWorker)
     assert etag == '"d229c1fc0e509475afe56426c89d2724-2"'
     assert bucket._multipart._completed
+
+
+def test_zero_data(sample_data):
+    stream_handler = StreamHandler(StringIO())
+    bucket = FakeBucket()
+    sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
+    with pytest.raises(UploadException):
+        sup.main_loop(worker_class=DummyWorker)
+    assert bucket._multipart._canceled is True
 
 
 class ErrorWorker(UploadWorker):
