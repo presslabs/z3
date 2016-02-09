@@ -25,6 +25,9 @@ from z3.config import get_config
 
 Result = namedtuple('Result', ['success', 'traceback', 'index', 'md5'])
 CFG = get_config()
+VERB_QUIET = 0
+VERB_NORMAL = 1
+VERB_PROGRESS = 2
 
 
 def multipart_etag(digests):
@@ -152,7 +155,7 @@ class UploadException(Exception):
 class UploadSupervisor(object):
     '''Reads chunks and dispatches them to UploadWorkers'''
 
-    def __init__(self, stream_handler, name, bucket, headers=None, quiet=True):
+    def __init__(self, stream_handler, name, bucket, headers=None, verbosity=1):
         self.stream_handler = stream_handler
         self.name = name
         self.bucket = bucket
@@ -161,7 +164,7 @@ class UploadSupervisor(object):
         self.multipart = None
         self.results = []  # beware s3 multipart indexes are 1 based
         self._pending_chunks = 0
-        self._quiet = quiet
+        self._verbosity = verbosity
         self._workers = None
         self._headers = headers
 
@@ -202,7 +205,7 @@ class UploadSupervisor(object):
         """
         result = self.inbox.get()
         if result.success:
-            if not self._quiet:
+            if self._verbosity >= VERB_PROGRESS:
                 sys.stderr.write("\nuploaded chunk {} \n".format(result.index))
             self.results.append((result.index, result.md5))
             self._pending_chunks -= 1
@@ -304,10 +307,15 @@ def main():
                         dest='metadata',
                         default=list(),
                         help='Metatada in key=value format')
-    parser.add_argument('--quiet',
-                        dest='quiet',
-                        action='store_true',
-                        help=('suppress progress report'))
+    quiet_group = parser.add_mutually_exclusive_group()
+    quiet_group.add_argument('--progress',
+                             dest='progress',
+                             action='store_true',
+                             help=('show progress report'))
+    quiet_group.add_argument('--quiet',
+                             dest='quiet',
+                             action='store_true',
+                             help=('don\'t emit any output at all'))
     args = parser.parse_args()
 
     input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
@@ -318,14 +326,15 @@ def main():
     stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
     bucket = boto.connect_s3(
         CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
+    verbosity = 0 if args.quiet else 1 + int(args.progress)  # 0 totally silent, 1 default, 2 show progress
     sup = UploadSupervisor(
         stream_handler,
         args.name,
         bucket=bucket,
-        quiet=args.quiet,
+        verbosity=verbosity,
         headers=parse_metadata(args.metadata),
     )
-    if not args.quiet:
+    if verbosity >= VERB_NORMAL:
         sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
             CFG['BUCKET'], args.name, (chunk_size/(1024*1024.0)), args.concurrency))
     try:
@@ -333,7 +342,8 @@ def main():
     except UploadException as excp:
         sys.stderr.write("{}\n".format(excp))
         return 1
-    print json.dumps({'status': 'success', 'etag': etag})
+    if verbosity >= VERB_NORMAL:
+        print json.dumps({'status': 'success', 'etag': etag})
 
 
 if __name__ == '__main__':
