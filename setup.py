@@ -16,7 +16,8 @@ setup(
         'console_scripts': [
             'pput = z3.pput:main',
             'z3 = z3.snap:main',
-            'z3_get = z3.get:main'
+            'z3_get = z3.get:main',
+            'z3_ssh_sync = z3.ssh_sync:main'
         ]
     },
     keywords='ZFS backup',

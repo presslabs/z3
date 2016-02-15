@@ -217,9 +217,9 @@ class CommandExecutor(object):
             ['which', 'pv'],
             stderr=subprocess.STDOUT, stdout=subprocess.PIPE) == 0
 
-    def pipe(self, cmd1, cmd2, **kwa):
+    def pipe(self, cmd1, cmd2, quiet=False, **kwa):
         """Executes commands"""
-        if self.has_pv:
+        if self.has_pv and not quiet:
             return self.shell("{} | pv | {}".format(cmd1, cmd2), **kwa)
         else:
             return self.shell("{} | {}".format(cmd1, cmd2), **kwa)
@@ -399,7 +399,7 @@ def main():
     parser.add_argument('--snapshot-prefix',
                         dest='snapshot_prefix',
                         default=cfg.get('SNAPSHOT_PREFIX', 'zfs-auto-snap:daily'),
-                        help='ignore snapshots that start with this prefix')
+                        help='only operate on snapshots that start with this prefix')
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
     backup_parser = subparsers.add_parser(
