@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import argparse
 import subprocess
-import os.path
+import sys
 
 from z3.config import get_config
 from z3.snap import ZFSSnapshotManager, CommandExecutor
@@ -22,36 +22,69 @@ class RemoteZFSSnapshotManager(ZFSSnapshotManager):
              'sudo zfs list -Ht snap -o name,used,refer,mountpoint,written'])
 
 
-def snapshots_to_send(local_snaps, remote_snaps):
+def snapshots_to_send(source_snaps, dest_snaps):
     """return pair of snapshots"""
-    if len(local_snaps) == 0:
+    if len(source_snaps) == 0:
         raise AssertionError("No snapshots exist locally!")
-    if len(remote_snaps) == 0:
+    if len(dest_snaps) == 0:
         # nothing on the remote side, send everything
-        return None, local_snaps[-1]
-    last_remote = remote_snaps[-1]
-    for snap in reversed(local_snaps):
+        return None, source_snaps[-1]
+    last_remote = dest_snaps[-1]
+    for snap in reversed(source_snaps):
         if snap == last_remote:
             # found a common snapshot
-            return last_remote, local_snaps[-1]
-    # no common snapshots exist; panic!
-    raise AssertionError("Could not find common between local and remote!")
+            return last_remote, source_snaps[-1]
+    # sys.stderr.write("source:'{}', dest:'{}'".format(source_snaps, dest_snaps))
+    raise AssertionError("Latest snapshot on destination doesn't exist on source!")
 
 
-def send_snapshots(from_snap, to_snap, remote_addr, remote_fs, executor=None, dry_run=False):
-    executor = executor if executor is not None else CommandExecutor()
+def prepare_commands(from_snap, to_snap, filesystem, dry_run=False):
     if from_snap == to_snap:
         if not quiet:
             print("Nothing to do here.")
         return
     if from_snap is None:
-        local_cmd = "zfs send '{}'".format(to_snap)
+        send_cmd = "zfs send {}".format(to_snap)
     else:
-        local_cmd = "zfs send -I '{}' '{}'".format(from_snap, to_snap)
+        send_cmd = "zfs send -I {} {}".format(from_snap, to_snap)
     dry = 'nv' if dry_run else ''
-    remote_cmd = "ssh {} -C 'mbuffer -s 128k -m 200m -q | sudo zfs recv -d{dry} {}'".format(
-        remote_addr, remote_fs, dry=dry)
-    executor.pipe(local_cmd, remote_cmd, quiet=quiet)
+    recv_cmd = "zfs recv -d{dry} {}".format(
+        filesystem, dry=dry)
+    return send_cmd, recv_cmd
+
+
+def send_snapshots(send_cmd, recv_cmd, remote_addr):
+    recv_cmd = "ssh {} -C 'mbuffer -s 128k -m 200m -q | sudo {}'".format(
+        remote_addr, recv_cmd)
+    return send_cmd, recv_cmd
+
+
+def pull_snapshots(send_cmd, recv_cmd, remote_addr):
+    send_cmd = "ssh {} -C 'sudo {}'".format(
+        remote_addr, send_cmd)
+    recv_cmd = "mbuffer -s 128k -m 200m -q | {}".format(recv_cmd)
+    return send_cmd, recv_cmd
+
+
+def sync_snapshots(pair, local_fs, remote_fs, remote_addr, pull, dry_run):
+    from_snap, to_snap = pair
+    target_fs = local_fs if pull else remote_fs
+    source_fs = remote_fs if pull else local_fs
+    from_snap = "{}@{}".format(source_fs, from_snap) if from_snap is not None else None
+    to_snap = "{}@{}".format(source_fs, to_snap)
+    cmd_pair = prepare_commands(
+        from_snap,
+        to_snap,
+        filesystem=target_fs,
+        dry_run=dry_run,
+    )
+    if cmd_pair is None:
+        return
+    send_cmd, recv_cmd = cmd_pair
+    if pull:
+        return pull_snapshots(send_cmd, recv_cmd, remote_addr)
+    else:
+        return send_snapshots(send_cmd, recv_cmd, remote_addr)
 
 
 def main():
@@ -72,6 +105,11 @@ def main():
                         dest='snapshot_prefix',
                         default=cfg.get('SNAPSHOT_PREFIX', 'zfs-auto-snap:daily'),
                         help='only operate on snapshots that start with this prefix')
+    parser.add_argument('--pull',
+                        dest='pull',
+                        default=False,
+                        action='store_true',
+                        help='pull snapshots from remote')
     parser.add_argument('--quiet',
                         dest='quiet',
                         default=False,
@@ -92,15 +130,18 @@ def main():
                    for s in local_mgr.list()]
     remote_snaps = [s.name[len(remote_fs)+1:]  # strip fs name
                     for s in remote_mgr.list()]
-    from_snap, to_snap = snapshots_to_send(local_snaps, remote_snaps)
-    local_fs = args.filesystem
-    send_snapshots(
-        "{}@{}".format(local_fs, from_snap) if from_snap is not None else None,
-        "{}@{}".format(local_fs, to_snap),
-        remote_addr=args.remote,
-        remote_fs=remote_fs,
-        dry_run=args.dry_run,
-    )
+    if args.pull:
+        pair = snapshots_to_send(source_snaps=remote_snaps, dest_snaps=local_snaps)
+    else:
+        pair = snapshots_to_send(source_snaps=local_snaps, dest_snaps=remote_snaps)
+    cmd_pair = sync_snapshots(
+        pair, args.filesystem, remote_fs, args.remote, args.pull, dry_run=args.dry_run)
+    if cmd_pair is None:
+        return
+    send_cmd, recv_cmd = cmd_pair
+    executor = CommandExecutor()
+    executor.pipe(send_cmd, recv_cmd, quiet=quiet)
+
 
 
 if __name__ == '__main__':
