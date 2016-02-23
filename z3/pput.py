@@ -272,7 +272,7 @@ def optimize_chunksize(estimated):
     # part size has to be at least 5MB
     estimated = estimated * 1.05  # just to be on the safe side overesimate the total size to upload
     min_part_size = max(estimated / max_parts, 5*1024*1024)
-    return min_part_size
+    return int(min_part_size)
 
 
 def main():
