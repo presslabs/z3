@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import argparse
 import functools
 import logging
@@ -9,6 +11,9 @@ from collections import OrderedDict
 import boto
 
 from z3.config import get_config
+
+
+quiet = False
 
 
 def cached(func):
@@ -201,7 +206,7 @@ class CommandExecutor(object):
     @staticmethod
     def shell(cmd, dry_run=False, capture=False):
         if dry_run:
-            print cmd
+            print(cmd)
         else:
             if capture:
                 return subprocess.check_output(
@@ -339,27 +344,46 @@ class PairManager(object):
             )
 
 
+def _get_widths(widths, line):
+    for index, value in enumerate(line):
+        widths[index] = max(widths[index], len("{}".format(value)))
+    return widths
+
+
+def _prepare_line(s3_snap, z_snap):
+    if s3_snap is None:
+        snap_type = 'missing'
+        health = '-'
+        name = z_snap.name.split('@', 1)[1]
+        parent_name = '-'
+        local_state = 'ok'
+    else:
+        snap_type = 'full' if s3_snap.is_full else 'incremental'
+        health = s3_snap.reason_broken or 'ok'
+        parent_name = '' if s3_snap.is_full else s3_snap.parent_name
+        name = s3_snap.name
+        local_state = 'ok' if z_snap is not None else 'missing'
+    return (name, parent_name, snap_type, health, local_state)
+
+
 def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
+    print("backup status for {}@{}* on {}/{}".format(
+        filesystem, snapshot_prefix, bucket.name, s3_prefix))
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
-    s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
-    zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
-    pair_manager = PairManager(s3_mgr, zfs_mgr)
-    fmt = "{:20} | {:20} | {:15} | {:16} | {:10}"
-    print fmt.format("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE")
+    pair_manager = PairManager(
+        S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix),
+        ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix))
+    header = ("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE")
+    widths = [len(col) for col in header]
+    listing = []
     for s3_snap, z_snap in pair_manager.list():
-        if s3_snap is None:
-            snap_type = 'missing'
-            health = '-'
-            name = z_snap.name
-            parent_name = '-'
-            local_state = 'ok'
-        else:
-            snap_type = 'full' if s3_snap.is_full else 'incremental'
-            health = s3_snap.reason_broken or 'ok'
-            parent_name = '' if s3_snap.is_full else s3_snap.parent_name
-            name = s3_snap.name
-            local_state = 'ok' if z_snap is not None else 'missing'
-        print fmt.format(name, parent_name, snap_type, health, local_state)
+        line = _prepare_line(s3_snap, z_snap)
+        listing.append(line)
+        widths = _get_widths(widths, line)
+    fmt = " | ".join("{{:{w}}}".format(w=w) for w in widths)
+    print(fmt.format(*header))
+    for line in listing:
+        print(fmt.format(*line))
 
 
 def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, dry):
@@ -422,7 +446,7 @@ def main():
                                 help='Snapshot to backup. Defaults to latest.')
     subparsers.add_parser('status', help='show status of current backups')
     args = parser.parse_args()
-    print args
+
     bucket = boto.connect_s3(
         cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
     if args.subcommand == 'status':

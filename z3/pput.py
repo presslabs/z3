@@ -7,7 +7,6 @@ pput bucket_name/filename
 from Queue import Queue
 from cStringIO import StringIO
 from collections import namedtuple
-from logging import getLogger
 from threading import Thread
 import argparse
 import binascii
@@ -116,7 +115,7 @@ class UploadWorker(object):
         self.outbox = outbox
         self.multipart = multipart
         self._thread = None
-        self.log = getLogger('UploadWorker')
+        self.log = logging.getLogger('UploadWorker')
 
     @retry()
     def upload_part(self, index, chunk):
