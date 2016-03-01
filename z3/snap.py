@@ -361,7 +361,7 @@ def _prepare_line(s3_snap, z_snap):
         snap_type = 'full' if s3_snap.is_full else 'incremental'
         health = s3_snap.reason_broken or 'ok'
         parent_name = '' if s3_snap.is_full else s3_snap.parent_name
-        name = s3_snap.name
+        name = s3_snap.name.split('@', 1)[1]
         local_state = 'ok' if z_snap is not None else 'missing'
     return (name, parent_name, snap_type, health, local_state)
 
