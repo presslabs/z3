@@ -32,10 +32,10 @@ def cached(func):
 COMPRESSORS = {
     'pigz1': {
         'compress': 'pigz -1 --blocksize 4096',
-        'decompress': 'unpigz'},
+        'decompress': 'pigz -d'},
     'pigz4': {
         'compress': 'pigz -4 --blocksize 4096',
-        'decompress': 'unpigz'},
+        'decompress': 'pigz -d'},
 }
 
 
