@@ -486,7 +486,7 @@ def main():
                                help='Snapshot to backup. Defaults to latest.')
     backup_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
                                help='Snapshot to backup. Defaults to latest.')
-    backup_parser.add_argument('--compressor', dest='compressor', default='pigz1',
+    backup_parser.add_argument('--compressor', dest='compressor', default=cfg.get('COMPRESSOR'),
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
                                help=('Specify the compressor. Defaults to pigz1. '
                                      'Use "none" to disable.'))
