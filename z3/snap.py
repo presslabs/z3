@@ -29,6 +29,16 @@ def cached(func):
     return wrapper
 
 
+COMPRESSORS = {
+    'pigz1': {
+        'compress': 'pigz -1 --blocksize 4096',
+        'decompress': 'unpigz'},
+    'pigz4': {
+        'compress': 'pigz -4 --blocksize 4096',
+        'decompress': 'unpigz'},
+}
+
+
 class IntegrityError(Exception):
     pass
 
@@ -91,6 +101,10 @@ class S3Snapshot(object):
             return
         return self._reason_broken
 
+    @property
+    def compressor(self):
+        return self._metadata.get('compressor')
+
 
 class S3SnapshotManager(object):
     def __init__(self, bucket, s3_prefix, snapshot_prefix):
@@ -105,12 +119,9 @@ class S3SnapshotManager(object):
         snapshots = {}
         strip_chars = len(self.s3_prefix)
         for key in self.bucket.list(prefix):
-            # print key.key, prefix
             key = self.bucket.get_key(key.key)
             name = key.key[strip_chars:]
             snapshots[name] = S3Snapshot(name, metadata=key.metadata, manager=self)
-        # from pprint import pprint
-        # pprint(snapshots)
         return snapshots
 
     def list(self):
@@ -231,10 +242,11 @@ class CommandExecutor(object):
 
 
 class PairManager(object):
-    def __init__(self, s3_manager, zfs_manager, command_executor=None):
+    def __init__(self, s3_manager, zfs_manager, command_executor=None, compressor=None):
         self.s3_manager = s3_manager
         self.zfs_manager = zfs_manager
         self._cmd = command_executor or CommandExecutor()
+        self.compressor = compressor
 
     def list(self):
         pairs = []
@@ -267,6 +279,36 @@ class PairManager(object):
             logging.error("failed to parse output '%s'", output)
             raise
 
+    def _compress(self, cmd):
+        """Adds the appropriate command to compress the zfs stream"""
+        compressor = COMPRESSORS.get(self.compressor)
+        if compressor is None:
+            return cmd
+        compress_cmd = compressor['compress']
+        return "{} | {}".format(compress_cmd, cmd)
+
+    def _decompress(self, cmd, s3_snap):
+        """Adds the appropriate command to decompress the zfs stream
+        This is determined from the metadata of the s3_snap.
+        """
+        compressor = COMPRESSORS.get(s3_snap.compressor)
+        if compressor is None:
+            return cmd
+        decompress_cmd = compressor['decompress']
+        return "{} | {}".format(decompress_cmd, cmd)
+
+    def _pput_cmd(self, estimated, s3_prefix, snap_name, parent=None):
+        meta = []
+        if parent is None:
+            meta.append("is_full=true")
+        else:
+            meta.append("parent={}".format(parent))
+        if self.compressor is not None:
+            meta.append("compressor={}".format(self.compressor))
+        return "pput --estimated {estimated} {meta} {prefix}{name}".format(
+            estimated=estimated, prefix=s3_prefix, name=snap_name,
+            meta=" ".join(("--meta " + m) for m in meta))
+
     def backup_full(self, snap_name=None, dry_run=False):
         """Do a full backup of a snapshot. By default latest local snapshot"""
         z_snap = self._snapshot_to_backup(snap_name)
@@ -276,8 +318,12 @@ class PairManager(object):
                 capture=True))
         self._cmd.pipe(
             "zfs send '{}'".format(z_snap.name),
-            "pput --estimated {} --meta is_full=true {}{}".format(
-                estimated_size, self.s3_manager.s3_prefix, z_snap.name),
+            self._compress(
+                self._pput_cmd(
+                    estimated=estimated_size,
+                    s3_prefix=self.s3_manager.s3_prefix,
+                    snap_name=z_snap.name)
+            ),
             dry_run=dry_run,
         )
 
@@ -311,8 +357,13 @@ class PairManager(object):
             self._cmd.pipe(
                 "zfs send -i '{}' '{}'".format(
                     z_snap.parent.name, z_snap.name),
-                "pput --estimated {} --meta parent={} {}{}".format(
-                    estimated_size, z_snap.parent.name, self.s3_manager.s3_prefix, z_snap.name),
+                self._compress(
+                    self._pput_cmd(
+                        estimated=estimated_size,
+                        parent=z_snap.parent.name,
+                        s3_prefix=self.s3_manager.s3_prefix,
+                        snap_name=z_snap.name)
+                ),
                 dry_run=dry_run,
             )
 
@@ -339,7 +390,10 @@ class PairManager(object):
             self._cmd.pipe(
                 "z3_get {}".format(
                     os.path.join(self.s3_manager.s3_prefix, s3_snap.name)),
-                "zfs recv {}".format(s3_snap.name),
+                self._decompress(
+                    cmd="zfs recv {}".format(s3_snap.name),
+                    s3_snap=s3_snap,
+                ),
                 dry_run=dry_run,
             )
 
@@ -386,11 +440,11 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         print(fmt.format(*line))
 
 
-def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, dry):
+def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
-    pair_manager = PairManager(s3_mgr, zfs_mgr)
+    pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor)
     snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
     if full is True:
         pair_manager.backup_full(snap_name=snap_name, dry_run=dry)
@@ -432,6 +486,10 @@ def main():
                                help='Snapshot to backup. Defaults to latest.')
     backup_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
                                help='Snapshot to backup. Defaults to latest.')
+    backup_parser.add_argument('--compressor', dest='compressor', default='pigz1',
+                               choices=(['none'] + sorted(COMPRESSORS.keys())),
+                               help=('Specify the compressor. Defaults to pigz1. '
+                                     'Use "none" to disable.'))
     incremental_group = backup_parser.add_mutually_exclusive_group()
     incremental_group.add_argument(
         '--full', dest='full', action='store_true', help='Perform full backup')
@@ -453,9 +511,10 @@ def main():
         list_snapshots(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
                        filesystem=args.filesystem)
     elif args.subcommand == 'backup':
+        compressor = None if args.compressor.lower() == 'none' else args.compressor
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
-                  dry=args.dry)
+                  dry=args.dry, compressor=compressor)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry)

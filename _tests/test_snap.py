@@ -23,7 +23,7 @@ class FakeBucket(object):
     rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'
     fake_data = {
         "pool/fs@snap_0": {'parent': 'pool/fs@snap_expired'},
-        "pool/fs@snap_1_f": {'is_full': 'true'},
+        "pool/fs@snap_1_f": {'is_full': 'true', 'compressor': 'pigz1'},
         "pool/fs@snap_2": {'parent': 'pool/fs@snap_1_f'},
         "pool/fs@snap_3": {'parent': 'pool/fs@snap_2', 'is_full': 'false'},
         "pool/fs@snap_4_mp": {'parent': 'missing_parent'},  # missing parent
@@ -276,7 +276,7 @@ def test_backup_incremental_latest(pair_manager):
     pair_manager.backup_incremental()
     # snap_8 and snap_9 exist locally but not in s3
     # snap_8 comes after snap_3
-    zfs_list = [
+    commands = [
         "zfs send -nvP -i 'pool/fs@snap_3' 'pool/fs@snap_8'",
         ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
          "pput --estimated 1234 --meta parent=pool/fs@snap_3 {}pool/fs@snap_8"),
@@ -284,7 +284,7 @@ def test_backup_incremental_latest(pair_manager):
         ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
          "pput --estimated 1234 --meta parent=pool/fs@snap_8 {}pool/fs@snap_9")
     ]
-    expected = [e.format(FakeBucket.rand_prefix) for e in zfs_list]
+    expected = [e.format(FakeBucket.rand_prefix) for e in commands]
     assert pair_manager._cmd._called_commands == expected
 
 
@@ -311,7 +311,8 @@ def test_backup_incremental_cycle(s3_manager):
         'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
-        'pool/fs@snap_6_cycle\t10.0M\t10.0M\t-\t10.0M\n'  # these have bad metadata on s3
+        # the next 2 have bad metadata in the s3 fixture
+        'pool/fs@snap_6_cycle\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_7_cycle\t10.0M\t10.0M\t-\t10.0M\n'
         'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
     )
@@ -325,6 +326,50 @@ def test_backup_incremental_cycle(s3_manager):
     assert fake_cmd._called_commands == []
 
 
+def test_backup_incremental_compressed(s3_manager):
+    zfs_list = (
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=zfs_list, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(
+        s3_manager, zfs_manager, command_executor=fake_cmd, compressor='pigz1')
+    pair_manager.backup_incremental()
+    commands = [
+        "zfs send -nvP -i 'pool/fs@snap_3' 'pool/fs@snap_8'",
+        ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
+         "pigz -1 --blocksize 4096 | "
+         "pput --estimated 1234 --meta parent=pool/fs@snap_3 --meta compressor=pigz1 {}pool/fs@snap_8"),
+    ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in commands]
+    assert fake_cmd._called_commands == expected
+
+
+def test_backup_full_compressed(s3_manager):
+    zfs_list = (
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_3\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_8\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=zfs_list, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(
+        s3_manager, zfs_manager, command_executor=fake_cmd, compressor='pigz1')
+    pair_manager.backup_full()
+    commands = [
+        "zfs send -nvP 'pool/fs@snap_8'",
+        ("zfs send 'pool/fs@snap_8' | "
+         "pigz -1 --blocksize 4096 | "
+         "pput --estimated 1234 --meta is_full=true --meta compressor=pigz1 {}pool/fs@snap_8"),
+    ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in commands]
+    assert fake_cmd._called_commands == expected
+
+
 def test_restore_full(s3_manager):
     """Test full restore on empty zfs dataset"""
     zfs_list = 'pool@p1\t0\t19K\t-\t19K\n'  # we have no pool/fs snapshots locally
@@ -332,7 +377,7 @@ def test_restore_full(s3_manager):
     fake_cmd = FakeCommandExecutor()
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     pair_manager.restore('pool/fs@snap_1_f')
-    expected = "z3_get {}pool/fs@snap_1_f | zfs recv pool/fs@snap_1_f".format(
+    expected = "z3_get {}pool/fs@snap_1_f | unpigz | zfs recv pool/fs@snap_1_f".format(
         FakeBucket.rand_prefix)
     assert fake_cmd._called_commands == [expected]
 
@@ -346,7 +391,7 @@ def test_restore_incremental_empty_dataset(s3_manager):
     pair_manager.restore('pool/fs@snap_3')  # ask for an incremental snapshot
     # all incremental snapshots until we hit a full snapshot are expected
     expected = [
-        "z3_get {}pool/fs@snap_1_f | zfs recv pool/fs@snap_1_f",
+        "z3_get {}pool/fs@snap_1_f | unpigz | zfs recv pool/fs@snap_1_f",
         "z3_get {}pool/fs@snap_2 | zfs recv pool/fs@snap_2",
         "z3_get {}pool/fs@snap_3 | zfs recv pool/fs@snap_3",
     ]
