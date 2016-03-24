@@ -18,15 +18,16 @@ quiet = False
 
 def cached(func):
     @functools.wraps(func)
-    def wrapper(self, *a, **kwa):
-        # ARGUMENTS AREN'T PART OF CACHE KEY
-        # that's safe in this case, but might cause surprising bugs if you reuse it as is
+    def cacheing_wrapper(self, *a, **kwa):
         cache_key = func.__name__ + '_cached_value'
+        if len(a) or len(kwa):
+            # make sure we don't shoot ourselves in the foot by calling this on a method with args
+            raise AssertionError("'cached' decorator called on method with arguments!")
         if not hasattr(self, cache_key):
             val = func(self, *a, **kwa)
             setattr(self, cache_key, val)
         return getattr(self, cache_key)
-    return wrapper
+    return cacheing_wrapper
 
 
 COMPRESSORS = {
@@ -73,7 +74,6 @@ class S3Snapshot(object):
     def parent_name(self):
         return self._metadata.get("parent")
 
-    @cached
     def _is_healthy(self, visited=frozenset()):
         if self.is_full:
             return True
@@ -84,7 +84,7 @@ class S3Snapshot(object):
             self._reason_broken = self.MISSING_PARENT
             return False  # missing parent
         if not self.parent._is_healthy(visited.union([self])):
-            if self.parent.reason_broken == self.CYCLE:
+            if self.parent._reason_broken == self.CYCLE:
                 self._reason_broken = self.CYCLE
             else:
                 self._reason_broken = self.PARENT_BROKEN
@@ -92,6 +92,7 @@ class S3Snapshot(object):
         return True
 
     @property
+    @cached
     def is_healthy(self):
         return self._is_healthy()
 
@@ -298,7 +299,7 @@ class PairManager(object):
         return "{} | {}".format(decompress_cmd, cmd)
 
     def _pput_cmd(self, estimated, s3_prefix, snap_name, parent=None):
-        meta = []
+        meta = ['estimated={}'.format(estimated)]
         if parent is None:
             meta.append("is_full=true")
         else:
