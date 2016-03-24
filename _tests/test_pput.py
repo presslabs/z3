@@ -18,7 +18,10 @@ _cached_sample_data = None
 
 
 class ReadOnlyFile(object):
-    def __init__(self, fd, allowed):
+    """A read-only file like object.
+    Helps ensure we don't accidentally mutate the fixture between test runs.
+    """
+    def __init__(self, fd, allowed=('read', 'seek')):
         self._fd = fd
         self._allowed = set(allowed)
 
@@ -50,7 +53,7 @@ def sample_data():
                 )
         print "wrote {} MB" .format(data.tell() / 1024.0 / 1024.0)
         # give the test a read-only file to avoid accidentally modifying the data between tests
-        _cached_sample_data = ReadOnlyFile(data, allowed=['read', 'seek'])
+        _cached_sample_data = ReadOnlyFile(data)
     _cached_sample_data.seek(0)
     return _cached_sample_data
 
