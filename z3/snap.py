@@ -304,7 +304,7 @@ class PairManager(object):
         return "{} | {}".format(decompress_cmd, cmd)
 
     def _pput_cmd(self, estimated, s3_prefix, snap_name, parent=None):
-        meta = ['estimated={}'.format(estimated)]
+        meta = ['size={}'.format(estimated)]
         if parent is None:
             meta.append("is_full=true")
         else:

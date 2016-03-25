@@ -256,7 +256,7 @@ def test_backup_latest_full(pair_manager):
     expected = [
         "zfs send -nvP 'pool/fs@snap_9'",
         ("zfs send 'pool/fs@snap_9' | "
-         "pput --estimated 1234 --meta estimated=1234 --meta is_full=true {}pool/fs@snap_9")]
+         "pput --estimated 1234 --meta size=1234 --meta is_full=true {}pool/fs@snap_9")]
     assert pair_manager._cmd._called_commands == [
         e.format(FakeBucket.rand_prefix)
         for e in expected]
@@ -267,7 +267,7 @@ def test_backup_full(pair_manager):
     expected = [
         "zfs send -nvP 'pool/fs@snap_3'",
         ("zfs send 'pool/fs@snap_3' | "
-         "pput --estimated 1234 --meta estimated=1234 --meta is_full=true {}pool/fs@snap_3")]
+         "pput --estimated 1234 --meta size=1234 --meta is_full=true {}pool/fs@snap_3")]
     assert pair_manager._cmd._called_commands == [
         e.format(FakeBucket.rand_prefix)
         for e in expected]
@@ -280,11 +280,11 @@ def test_backup_incremental_latest(pair_manager):
     commands = [
         "zfs send -nvP -i 'pool/fs@snap_3' 'pool/fs@snap_8'",
         ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
-         "pput --estimated 1234 --meta estimated=1234 "
+         "pput --estimated 1234 --meta size=1234 "
          "--meta parent=pool/fs@snap_3 {}pool/fs@snap_8"),
         "zfs send -nvP -i 'pool/fs@snap_8' 'pool/fs@snap_9'",
         ("zfs send -i 'pool/fs@snap_8' 'pool/fs@snap_9' | "
-         "pput --estimated 1234 --meta estimated=1234 "
+         "pput --estimated 1234 --meta size=1234 "
          "--meta parent=pool/fs@snap_8 {}pool/fs@snap_9")
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in commands]
@@ -345,7 +345,7 @@ def test_backup_incremental_compressed(s3_manager):
         "zfs send -nvP -i 'pool/fs@snap_3' 'pool/fs@snap_8'",
         ("zfs send -i 'pool/fs@snap_3' 'pool/fs@snap_8' | "
          "pigz -1 --blocksize 4096 | "
-         "pput --estimated 1234 --meta estimated=1234 --meta parent=pool/fs@snap_3 "
+         "pput --estimated 1234 --meta size=1234 --meta parent=pool/fs@snap_3 "
          "--meta compressor=pigz1 {}pool/fs@snap_8"),
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in commands]
@@ -368,7 +368,7 @@ def test_backup_full_compressed(s3_manager):
         "zfs send -nvP 'pool/fs@snap_8'",
         ("zfs send 'pool/fs@snap_8' | "
          "pigz -1 --blocksize 4096 | "
-         "pput --estimated 1234 --meta estimated=1234 --meta is_full=true "
+         "pput --estimated 1234 --meta size=1234 --meta is_full=true "
          "--meta compressor=pigz1 {}pool/fs@snap_8"),
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in commands]
