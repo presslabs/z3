@@ -238,10 +238,11 @@ class CommandExecutor(object):
             ['which', 'pv'],
             stderr=subprocess.STDOUT, stdout=subprocess.PIPE) == 0
 
-    def pipe(self, cmd1, cmd2, quiet=False, **kwa):
+    def pipe(self, cmd1, cmd2, quiet=False, estimated_size=None, **kwa):
         """Executes commands"""
         if self.has_pv and not quiet:
-            return self.shell("{} | pv | {}".format(cmd1, cmd2), **kwa)
+            pv = "pv" if estimated_size is None else "pv --size {}".format(estimated_size)
+            return self.shell("{} | {}| {}".format(cmd1, pv, cmd2), **kwa)
         else:
             return self.shell("{} | {}".format(cmd1, cmd2), **kwa)
 
@@ -330,6 +331,7 @@ class PairManager(object):
                     snap_name=z_snap.name)
             ),
             dry_run=dry_run,
+            estimated_size=estimated_size,
         )
 
     def backup_incremental(self, snap_name=None, dry_run=False):
@@ -370,6 +372,7 @@ class PairManager(object):
                         snap_name=z_snap.name)
                 ),
                 dry_run=dry_run,
+                estimated_size=estimated_size,
             )
 
     def restore(self, snap_name, dry_run=False):
@@ -400,6 +403,7 @@ class PairManager(object):
                     s3_snap=s3_snap,
                 ),
                 dry_run=dry_run,
+                estimated_size=s3_snap.size,
             )
 
 
