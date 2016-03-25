@@ -407,6 +407,18 @@ class PairManager(object):
             )
 
 
+def _humanize(size):
+    units = ('M', 'G', 'T')
+    unit_index = 0
+    size = float(size) / (1024**2)  # Mega
+    while size > 1024 and unit_index < (len(units) - 1):
+        size = size / 1024
+        unit_index += 1
+    size = "{:.2f}".format(size)
+    size = size.rstrip('0').rstrip('.')
+    return "{} {}".format(size, units[unit_index])
+
+
 def _get_widths(widths, line):
     for index, value in enumerate(line):
         widths[index] = max(widths[index], len("{}".format(value)))
@@ -427,7 +439,7 @@ def _prepare_line(s3_snap, z_snap):
         parent_name = '' if s3_snap.is_full else s3_snap.parent_name.split('@', 1)[1]
         name = s3_snap.name.split('@', 1)[1]
         local_state = 'ok' if z_snap is not None else 'missing'
-        size = s3_snap.size or ''
+        size = _humanize(s3_snap.size) if s3_snap.size is not None else ''
     return (name, parent_name, snap_type, health, local_state, size)
 
 

@@ -9,7 +9,12 @@ import pytest
 
 from z3.config import get_config
 from z3.snap import (list_snapshots, S3SnapshotManager, ZFSSnapshotManager,
-                     PairManager, CommandExecutor, IntegrityError)
+                     PairManager, CommandExecutor, IntegrityError, _humanize)
+
+
+MEGA = 1024 ** 2
+GIGA = 1024 ** 3
+TERA = 1024 ** 4
 
 
 class FakeKey(object):
@@ -74,6 +79,15 @@ def s3_manager(request):
     """
     return S3SnapshotManager(
         request.param(), s3_prefix=FakeBucket.rand_prefix, snapshot_prefix="pool/fs@snap_")
+
+
+@pytest.mark.parametrize("size, expected", [
+    (43 * MEGA, "43 M"),
+    (50 * GIGA, "50 G"),
+    (50.512 * GIGA, "50.51 G"),
+    (2.724 * TERA, "2.72 T")])
+def test_humanize(size, expected):
+    assert _humanize(size) == expected
 
 
 def test_list_snapshots(s3_manager):
