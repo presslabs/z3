@@ -187,7 +187,6 @@ class UploadSupervisor(object):
             raise AssertionError("multipart upload already started")
         headers = {
             "x-amz-acl": "bucket-owner-full-control",
-            "x-amz-storage-class": 'STANDARD_IA',
         }
         if self._headers:
             headers.update(self._headers)
@@ -274,7 +273,7 @@ def optimize_chunksize(estimated):
     return int(min_part_size)
 
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser(
         description='Read data from stdin and upload it to s3',
         epilog=('All optional args have a configurable default. '
@@ -306,6 +305,8 @@ def main():
                         dest='metadata',
                         default=list(),
                         help='Metatada in key=value format')
+    parser.add_argument('--storage-class', default=CFG['S3_STORAGE_CLASS'],
+                        dest='storage_class', help='The S3 storage class. Defaults to STANDARD_IA.')
     quiet_group = parser.add_mutually_exclusive_group()
     quiet_group.add_argument('--progress',
                              dest='progress',
@@ -315,8 +316,11 @@ def main():
                              dest='quiet',
                              action='store_true',
                              help=('don\'t emit any output at all'))
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def main():
+    args = parse_args()
     input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
     if args.estimated is not None:
         chunk_size = optimize_chunksize(parse_size(args.estimated))
@@ -325,13 +329,16 @@ def main():
     stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
     bucket = boto.connect_s3(
         CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
-    verbosity = 0 if args.quiet else 1 + int(args.progress)  # 0 totally silent, 1 default, 2 show progress
+    # verbosity: 0 totally silent, 1 default, 2 show progress
+    verbosity = 0 if args.quiet else 1 + int(args.progress)
+    headers = parse_metadata(args.metadata)
+    headers["x-amz-storage-class"] = args.storage_class
     sup = UploadSupervisor(
         stream_handler,
         args.name,
         bucket=bucket,
         verbosity=verbosity,
-        headers=parse_metadata(args.metadata),
+        headers=headers,
     )
     if verbosity >= VERB_NORMAL:
         sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
