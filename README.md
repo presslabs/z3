@@ -36,6 +36,17 @@ The config file is read from `/etc/z3_backup/z3.conf` if it exists, some default
 BUCKET `S3_KEY_ID` and `S3_SECRET` can't be provided on the command line.
 For a list of all options see `z3/sample.conf`.
 
+### Dataset Size, Concurrency and Memory Usage
+Since the data is streamed from `zfs send` it gets read in to memory in chunks.
+Z3 estimates a good chunk size for you: no smaller than 5MB and large enough
+to produce at most 9999 chunks. These are S3 limitation for multipart uploads.
+Here are some example chunk sizes for different datasets:
+ * 50 GiB: 5 MiB
+ * 500 GIB: 53 MiB
+ * 1 TiB: 110 MiB
+ * 2 TiB: 220 MiB
+
+Multiply that by `CONCURRENCY` to know how much memory your upload will use.
 
 ### Usage Examples
 
@@ -90,7 +101,6 @@ got zrep between 2 nodes and needed a way to push backups to a 3rd machine.
 `z3_get` called by `z3 restore` to download a backup.
 
 ## Development Overview
-
 ### Running the tests
 The test suite uses pytest.
 Some of the tests upload data to S3, so you need to setup the following environment:
@@ -130,7 +140,6 @@ It's usually invoked by z3.
 
 Consistency is important, it's better to fail hard when something goes wrong
 than silently upload inconsistent or partial data.
-
 There are few anticipated errors (if a part fails to upload, retry MAX_RETRY times).
 Any other problem is unanticipated, so just let the tool crash.
 
