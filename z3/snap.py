@@ -49,11 +49,12 @@ class S3Snapshot(object):
     MISSING_PARENT = 'missing parent'
     PARENT_BROKEN = 'parent broken'
 
-    def __init__(self, name, metadata, manager):
+    def __init__(self, name, metadata, manager, size):
         self.name = name
         self._metadata = metadata
         self._mgr = manager
         self._reason_broken = None
+        self.size = size
 
     def __repr__(self):
         if self.is_full:
@@ -107,7 +108,7 @@ class S3Snapshot(object):
         return self._metadata.get('compressor')
 
     @property
-    def size(self):
+    def uncompressed_size(self):
         return self._metadata.get('size')
 
 
@@ -126,7 +127,7 @@ class S3SnapshotManager(object):
         for key in self.bucket.list(prefix):
             key = self.bucket.get_key(key.key)
             name = key.key[strip_chars:]
-            snapshots[name] = S3Snapshot(name, metadata=key.metadata, manager=self)
+            snapshots[name] = S3Snapshot(name, metadata=key.metadata, manager=self, size=key.size)
         return snapshots
 
     def list(self):
@@ -441,7 +442,7 @@ def _prepare_line(s3_snap, z_snap):
         parent_name = '' if s3_snap.is_full else s3_snap.parent_name.split('@', 1)[1]
         name = s3_snap.name.split('@', 1)[1]
         local_state = 'ok' if z_snap is not None else 'missing'
-        size = _humanize(s3_snap.size) if s3_snap.size is not None else ''
+        size = _humanize(s3_snap.uncompressed_size) if s3_snap.uncompressed_size is not None else ''
     return (name, parent_name, snap_type, health, local_state, size)
 
 

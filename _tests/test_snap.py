@@ -22,6 +22,7 @@ class FakeKey(object):
         self.name = name
         self.key = name
         self.metadata = metadata
+        self.size = 1234
 
 
 class FakeBucket(object):
