@@ -87,6 +87,9 @@ z3 restore --help
 z3 restore the-part-after-the-at-sign --dry
 # inspect the commands that would be executed
 z3 restore the-part-after-the-at-sign
+
+# force rollback of filesystem (zfs recv -F)
+z3 restore the-part-after-the-at-sign --force
 ```
 
 ### Other Commands

@@ -375,7 +375,7 @@ class PairManager(object):
                 estimated_size=estimated_size,
             )
 
-    def restore(self, snap_name, dry_run=False):
+    def restore(self, snap_name, dry_run=False, force=False):
         current_snap = self.s3_manager.get(snap_name)
         if current_snap is None:
             raise Exception('no such snapshot "{}"'.format(snap_name))
@@ -394,12 +394,14 @@ class PairManager(object):
                 break
             else:
                 current_snap = current_snap.parent
+        force = '-F ' if force is True else ''
         for s3_snap in reversed(to_restore):
             self._cmd.pipe(
                 "z3_get {}".format(
                     os.path.join(self.s3_manager.s3_prefix, s3_snap.name)),
                 self._decompress(
-                    cmd="zfs recv {}".format(s3_snap.name),
+                    cmd="zfs recv {force}{snap}".format(
+                        force=force, snap=s3_snap.name),
                     s3_snap=s3_snap,
                 ),
                 dry_run=dry_run,
@@ -475,13 +477,13 @@ def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, co
         pair_manager.backup_incremental(snap_name=snap_name, dry_run=dry)
 
 
-def restore(bucket, s3_prefix, filesystem, snapshot_prefix, snapshot, dry):
+def restore(bucket, s3_prefix, filesystem, snapshot_prefix, snapshot, dry, force):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
     pair_manager = PairManager(s3_mgr, zfs_mgr)
     snap_name = "{}@{}".format(filesystem, snapshot)
-    pair_manager.restore(snap_name, dry_run=dry)
+    pair_manager.restore(snap_name, dry_run=dry, force=force)
 
 
 def main():
@@ -508,7 +510,7 @@ def main():
     backup_parser.add_argument('--snapshot', dest='snapshot', default=None,
                                help='Snapshot to backup. Defaults to latest.')
     backup_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
-                               help='Snapshot to backup. Defaults to latest.')
+                               help='Dry run.')
     backup_parser.add_argument('--compressor', dest='compressor', default=cfg.get('COMPRESSOR'),
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
                                help=('Specify the compressor. Defaults to pigz1. '
@@ -524,7 +526,9 @@ def main():
     restore_parser.add_argument(
         'snapshot', help='Snapshot to backup. Defaults to latest.')
     restore_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
-                                help='Snapshot to backup. Defaults to latest.')
+                                help='Dry run.')
+    restore_parser.add_argument('--force', dest='force', default=False, action='store_true',
+                                help='Force rollback of the filesystem (zfs recv -F).')
     subparsers.add_parser('status', help='show status of current backups')
     args = parser.parse_args()
 
@@ -540,7 +544,8 @@ def main():
                   dry=args.dry, compressor=compressor)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
-                filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry)
+                filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
+                force=args.force)
 
 
 if __name__ == '__main__':

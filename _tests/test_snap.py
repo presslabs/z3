@@ -465,3 +465,22 @@ def test_restore_noop(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     pair_manager.restore('pool/fs@snap_2')
     assert fake_cmd._called_commands == []
+
+
+def test_restore_force(s3_manager):
+    """Tests incremental restore with forced rollback"""
+    zfs_list = (
+        'pool@p1\t0\t19K\t-\t19K\n'  # we have no pool/fs snapshots locally
+        'pool/fs@snap_1_f\t10.0M\t10.0M\t-\t10.0M\n'
+        'pool/fs@snap_2\t10.0M\t10.0M\t-\t10.0M\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=zfs_list, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
+    pair_manager.restore('pool/fs@snap_3', force=True)  # ask for an incremental snapshot
+    # all incremental snapshots until we hit a full snapshot are expected
+    expected = [
+        "z3_get {}pool/fs@snap_3 | zfs recv -F pool/fs@snap_3",
+    ]
+    expected = [e.format(FakeBucket.rand_prefix) for e in expected]
+    assert fake_cmd._called_commands == expected
