@@ -106,6 +106,10 @@ class S3Snapshot(object):
     def compressor(self):
         return self._metadata.get('compressor')
 
+    @property
+    def size(self):
+        return self._metadata.get('size')
+
 
 class S3SnapshotManager(object):
     def __init__(self, bucket, s3_prefix, snapshot_prefix):
@@ -412,13 +416,15 @@ def _prepare_line(s3_snap, z_snap):
         name = z_snap.name.split('@', 1)[1]
         parent_name = '-'
         local_state = 'ok'
+        size = ''
     else:
         snap_type = 'full' if s3_snap.is_full else 'incremental'
         health = s3_snap.reason_broken or 'ok'
-        parent_name = '' if s3_snap.is_full else s3_snap.parent_name
+        parent_name = '' if s3_snap.is_full else s3_snap.parent_name.split('@', 1)[1]
         name = s3_snap.name.split('@', 1)[1]
         local_state = 'ok' if z_snap is not None else 'missing'
-    return (name, parent_name, snap_type, health, local_state)
+        size = s3_snap.size or ''
+    return (name, parent_name, snap_type, health, local_state, size)
 
 
 def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
@@ -428,7 +434,7 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
     pair_manager = PairManager(
         S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix),
         ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix))
-    header = ("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE")
+    header = ("NAME", "PARENT", "TYPE", "HEALTH", "LOCAL STATE", "SIZE")
     widths = [len(col) for col in header]
     listing = []
     for s3_snap, z_snap in pair_manager.list():
@@ -437,7 +443,7 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         widths = _get_widths(widths, line)
     fmt = " | ".join("{{:{w}}}".format(w=w) for w in widths)
     print(fmt.format(*header))
-    for line in listing:
+    for line in sorted(listing):
         print(fmt.format(*line))
 
 
