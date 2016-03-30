@@ -73,7 +73,7 @@ z3 backup --compressor pigz4 --dry-run
 z3 backup --compressor pigz4
 
 # perform full backup of a specific snapshot
-z3 backup --full --snapshot the-part-after-the-at-sign --dry
+z3 backup --full --snapshot the-part-after-the-at-sign --dry-run
 # inspect the commands that would be executed
 z3 backup --full --snapshot the-part-after-the-at-sign
 ```
@@ -84,7 +84,7 @@ z3 backup --full --snapshot the-part-after-the-at-sign
 z3 restore --help
 
 # restore a dataset to a certain snapshot
-z3 restore the-part-after-the-at-sign --dry
+z3 restore the-part-after-the-at-sign --dry-run
 # inspect the commands that would be executed
 z3 restore the-part-after-the-at-sign
 

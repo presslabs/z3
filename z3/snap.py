@@ -510,7 +510,7 @@ def main():
         'backup', help='backup local zfs snapshots to an s3 bucket')
     backup_parser.add_argument('--snapshot', dest='snapshot', default=None,
                                help='Snapshot to backup. Defaults to latest.')
-    backup_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
+    backup_parser.add_argument('--dry-run', dest='dry', default=False, action='store_true',
                                help='Dry run.')
     backup_parser.add_argument('--compressor', dest='compressor', default=cfg.get('COMPRESSOR'),
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
@@ -526,7 +526,7 @@ def main():
     restore_parser = subparsers.add_parser('restore', help='not implemented')
     restore_parser.add_argument(
         'snapshot', help='Snapshot to backup. Defaults to latest.')
-    restore_parser.add_argument('--dry', dest='dry', default=False, action='store_true',
+    restore_parser.add_argument('--dry-run', dest='dry', default=False, action='store_true',
                                 help='Dry run.')
     restore_parser.add_argument('--force', dest='force', default=False, action='store_true',
                                 help='Force rollback of the filesystem (zfs recv -F).')
