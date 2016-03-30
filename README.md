@@ -36,6 +36,19 @@ The config file is read from `/etc/z3_backup/z3.conf` if it exists, some default
 BUCKET `S3_KEY_ID` and `S3_SECRET` can't be provided on the command line.
 For a list of all options see `z3/sample.conf`.
 
+You'll usually want z3 to only backup certain snapshors (hourly/daily/weekly).
+To do that you can specify a `SNAPSHOT_PREFIX` (defaults to `zfs-auto-snap:daily`).
+
+Defaults for `SNAPSHOT_PREFIX` and `COMPRESSOR` can be set per filesystem like so:
+```
+[fs:tank/spam]
+SNAPSHOT_PREFIX=delicious-daily-spam
+COMPRESSOR=pigz4
+
+[fs:tank/ham]
+SNAPSHOT_PREFIX=weekly-non-spam
+```
+
 ### Dataset Size, Concurrency and Memory Usage
 Since the data is streamed from `zfs send` it gets read in to memory in chunks.
 Z3 estimates a good chunk size for you: no smaller than 5MB and large enough

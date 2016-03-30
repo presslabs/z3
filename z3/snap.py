@@ -504,7 +504,8 @@ def parse_args():
     parser.add_argument('--snapshot-prefix',
                         dest='snapshot_prefix',
                         default=None,
-                        help='only operate on snapshots that start with this prefix')
+                        help=('Only operate on snapshots that start with this prefix. '
+                              'Defaults to zfs-auto-snap:daily.'))
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
     backup_parser = subparsers.add_parser(
@@ -555,10 +556,10 @@ def main():
     elif args.subcommand == 'backup':
         if args.compressor is None:
             compressor = cfg.get('COMPRESSOR', section=fs_section)
-        elif args.compressor.lower() == 'none':
-            compressor = None
         else:
             compressor = args.compressor
+        if compressor.lower() == 'none':
+            compressor = None
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
                   dry=args.dry, compressor=compressor)
