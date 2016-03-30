@@ -6,6 +6,7 @@ import logging
 import operator
 import os
 import subprocess
+import sys
 from collections import OrderedDict
 
 import boto
@@ -487,7 +488,7 @@ def restore(bucket, s3_prefix, filesystem, snapshot_prefix, snapshot, dry, force
     pair_manager.restore(snap_name, dry_run=dry, force=force)
 
 
-def main():
+def parse_args():
     cfg = get_config()
     parser = argparse.ArgumentParser(
         description='list z3 snapshots',
@@ -502,7 +503,7 @@ def main():
                         help='the zfs dataset/filesystem to operate on')
     parser.add_argument('--snapshot-prefix',
                         dest='snapshot_prefix',
-                        default=cfg.get('SNAPSHOT_PREFIX', 'zfs-auto-snap:daily'),
+                        default=None,
                         help='only operate on snapshots that start with this prefix')
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
@@ -512,7 +513,7 @@ def main():
                                help='Snapshot to backup. Defaults to latest.')
     backup_parser.add_argument('--dry-run', dest='dry', default=False, action='store_true',
                                help='Dry run.')
-    backup_parser.add_argument('--compressor', dest='compressor', default=cfg.get('COMPRESSOR'),
+    backup_parser.add_argument('--compressor', dest='compressor', default=None,
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
                                help=('Specify the compressor. Defaults to pigz1. '
                                      'Use "none" to disable.'))
@@ -531,20 +532,38 @@ def main():
     restore_parser.add_argument('--force', dest='force', default=False, action='store_true',
                                 help='Force rollback of the filesystem (zfs recv -F).')
     subparsers.add_parser('status', help='show status of current backups')
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    bucket = boto.connect_s3(
-        cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
+
+def main():
+    cfg = get_config()
+    args = parse_args()
+    try:
+        s3_key_id, s3_secret, bucket = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
+    except KeyError as err:
+        sys.stderr.write("Configuration error! {} is not set.\n".format(err))
+        sys.exit(1)
+    bucket = boto.connect_s3(s3_key_id, s3_secret).get_bucket(bucket)
+    fs_section = "fs:{}".format(args.filesystem)
+    if args.snapshot_prefix is None:
+        snapshot_prefix = cfg.get("SNAPSHOT_PREFIX", section=fs_section)
+    else:
+        snapshot_prefix = args.snapshot_prefix
     if args.subcommand == 'status':
-        list_snapshots(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
+        list_snapshots(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                        filesystem=args.filesystem)
     elif args.subcommand == 'backup':
-        compressor = None if args.compressor.lower() == 'none' else args.compressor
-        do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
+        if args.compressor is None:
+            compressor = cfg.get('COMPRESSOR', section=fs_section)
+        elif args.compressor.lower() == 'none':
+            compressor = None
+        else:
+            compressor = args.compressor
+        do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
                   dry=args.dry, compressor=compressor)
     elif args.subcommand == 'restore':
-        restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=args.snapshot_prefix,
+        restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
                 force=args.force)
 
