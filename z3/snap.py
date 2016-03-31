@@ -14,9 +14,6 @@ import boto
 from z3.config import get_config
 
 
-quiet = False
-
-
 def cached(func):
     @functools.wraps(func)
     def cacheing_wrapper(self, *a, **kwa):
@@ -313,7 +310,7 @@ class PairManager(object):
             meta.append("parent={}".format(parent))
         if self.compressor is not None:
             meta.append("compressor={}".format(self.compressor))
-        return "pput --estimated {estimated} {meta} {prefix}{name}".format(
+        return "pput --quiet --estimated {estimated} {meta} {prefix}{name}".format(
             estimated=estimated, prefix=s3_prefix, name=snap_name,
             meta=" ".join(("--meta " + m) for m in meta))
 
@@ -335,6 +332,7 @@ class PairManager(object):
             dry_run=dry_run,
             estimated_size=estimated_size,
         )
+        return [{'snap_name': z_snap.name, 'size': estimated_size}]
 
     def backup_incremental(self, snap_name=None, dry_run=False):
         """Uploads named snapshot or latest, along with any other snapshots
@@ -343,6 +341,7 @@ class PairManager(object):
         z_snap = self._snapshot_to_backup(snap_name)
         to_upload = []
         current = z_snap
+        uploaded_meta = []
         while True:
             s3_snap = self.s3_manager.get(current.name)
             if s3_snap is not None:
@@ -376,6 +375,8 @@ class PairManager(object):
                 dry_run=dry_run,
                 estimated_size=estimated_size,
             )
+            uploaded_meta.append({'snap_name': z_snap.name, 'size': estimated_size})
+        return uploaded_meta
 
     def restore(self, snap_name, dry_run=False, force=False):
         current_snap = self.s3_manager.get(snap_name)
@@ -467,16 +468,22 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         print(fmt.format(*line))
 
 
-def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry):
+def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry, parseable):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
     pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor)
     snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
     if full is True:
-        pair_manager.backup_full(snap_name=snap_name, dry_run=dry)
+        uploaded = pair_manager.backup_full(snap_name=snap_name, dry_run=dry)
     else:
-        pair_manager.backup_incremental(snap_name=snap_name, dry_run=dry)
+        uploaded = pair_manager.backup_incremental(snap_name=snap_name, dry_run=dry)
+    for meta in uploaded:
+        if parseable:
+            print("{snap_name}\x00{size}".format(**meta))
+        else:
+            print("Successfuly backed up {}: {}.".format(
+                meta['snap_name'], _humanize(meta['size'])))
 
 
 def restore(bucket, s3_prefix, filesystem, snapshot_prefix, snapshot, dry, force):
@@ -518,6 +525,8 @@ def parse_args():
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
                                help=('Specify the compressor. Defaults to pigz1. '
                                      'Use "none" to disable.'))
+    backup_parser.add_argument('--parseable', dest='parseable', action='store_true',
+                               help='Machine readable output')
     incremental_group = backup_parser.add_mutually_exclusive_group()
     incremental_group.add_argument(
         '--full', dest='full', action='store_true', help='Perform full backup')
@@ -560,9 +569,10 @@ def main():
             compressor = args.compressor
         if compressor.lower() == 'none':
             compressor = None
+
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
-                  dry=args.dry, compressor=compressor)
+                  dry=args.dry, compressor=compressor, parseable=args.parseable)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
