@@ -95,7 +95,7 @@ def retry(times=int(CFG['MAX_RETRIES'])):
             for attempt in xrange(1, times+1):
                 try:
                     return func(*a, **kwa)
-                except: # pylint: disable=bare-except
+                except:  # pylint: disable=bare-except
                     if attempt >= times:
                         raise
                     logging.exception('Failed to upload part attempt {} of {}'.format(
