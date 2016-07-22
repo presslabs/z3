@@ -171,6 +171,8 @@ class ZFSSnapshotManager(object):
             return {}
         vols = {}
         for line in snap.splitlines():
+            if len(line) == 0:
+                continue
             name, used, refer, mountpoint, written = line.split('\t')
             vol_name, snap_name = name.split('@', 1)
             snapshots = vols.setdefault(vol_name, OrderedDict())
@@ -211,6 +213,12 @@ class ZFSSnapshotManager(object):
         return self._snapshots.values()
 
     def get_latest(self):
+        if len(self._snapshots) == 0:
+            cfg = get_config()
+            raise SoftError(
+                'Nothing to backup for filesystem "{}". Are you sure '
+                'SNAPSHOT_PREFIX="{}" is correct?'.format(
+                    cfg.get('FILESYSTEM'), cfg.get('SNAPSHOT_PREFIX')))
         return self._snapshots.values()[-1]
 
     def get(self, name):
@@ -545,6 +553,22 @@ def parse_args():
     return parser.parse_args()
 
 
+class SoftError(Exception):
+    pass
+
+
+def handle_soft_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except SoftError as err:
+            sys.stderr.write(str(err) + os.linesep)
+            sys.stderr.flush()
+    return wrapper
+
+
+@handle_soft_errors
 def main():
     cfg = get_config()
     args = parse_args()

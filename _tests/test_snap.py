@@ -1,6 +1,9 @@
 # pylint: disable=redefined-outer-name,protected-access
 from collections import OrderedDict
+from cStringIO import StringIO
+import contextlib
 import string
+import sys
 import random
 import os.path
 
@@ -9,7 +12,8 @@ import pytest
 
 from z3.config import get_config
 from z3.snap import (list_snapshots, S3SnapshotManager, ZFSSnapshotManager,
-                     PairManager, CommandExecutor, IntegrityError, _humanize)
+                     PairManager, CommandExecutor, IntegrityError, SoftError,
+                     _humanize, handle_soft_errors)
 
 
 MEGA = 1024 ** 2
@@ -487,3 +491,37 @@ def test_restore_force(s3_manager):
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in expected]
     assert fake_cmd._called_commands == expected
+
+
+def test_get_latest():
+    expected = (
+        'pool@p1\t0\t19K\t-\t19K\n'
+    )
+    zfs_manager = FakeZFSManager(fs_name='pool/fs', expected=expected, snapshot_prefix='snap_')
+    fake_cmd = FakeCommandExecutor()
+    with pytest.raises(SoftError) as excp_info:
+        zfs_manager.get_latest()
+    assert excp_info.value.message == \
+        'Nothing to backup for filesystem "None". Are you sure ' \
+        'SNAPSHOT_PREFIX="zfs-auto-snap:daily" is correct?'
+    assert fake_cmd._called_commands == []
+
+
+@contextlib.contextmanager
+def capture_output():
+    old_fds = sys.stdout, sys.stderr
+    try:
+        sys.stdout = StringIO()
+        sys.stderr = StringIO()
+        yield sys.stdout, sys.stderr
+    finally:
+        sys.stdout, sys.stderr = old_fds
+
+
+def test_handle_errors():
+    @handle_soft_errors
+    def func():
+        raise SoftError('Ana are mere')
+    with capture_output() as (stdout, stderr):
+        func()
+    assert (stdout.getvalue(), stderr.getvalue()) == ("", "Ana are mere\n")
