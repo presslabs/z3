@@ -1,6 +1,5 @@
 import ConfigParser
 import os
-import os.path
 
 import z3
 
@@ -54,6 +53,7 @@ def get_config():
         default = os.path.join(z3.__path__[0], "z3.conf")
         _config.read(default)
         _config.read("/etc/z3_backup/z3.conf")
+        _config.read(os.path.expanduser('~/.z3.cfg'))
         layers = [
             os.environ,  # env variables take precedence
             dict((k.upper(), v) for k, v in _config.items("main")),
