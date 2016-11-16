@@ -327,8 +327,14 @@ def main():
     else:
         chunk_size = parse_size(args.chunk_size)
     stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
+
+    extra_config = {}
+    if 'HOST' in CFG:
+        extra_config['host'] = CFG['HOST']
+
     bucket = boto.connect_s3(
-        CFG['S3_KEY_ID'], CFG['S3_SECRET']).get_bucket(CFG['BUCKET'])
+        CFG['S3_KEY_ID'], CFG['S3_SECRET'], **extra_config).get_bucket(CFG['BUCKET'])
+
     # verbosity: 0 totally silent, 1 default, 2 show progress
     verbosity = 0 if args.quiet else 1 + int(args.progress)
     headers = parse_metadata(args.metadata)
