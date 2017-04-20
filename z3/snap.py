@@ -42,6 +42,21 @@ class IntegrityError(Exception):
     pass
 
 
+class SoftError(Exception):
+    pass
+
+
+def handle_soft_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except SoftError as err:
+            sys.stderr.write(str(err) + os.linesep)
+            sys.stderr.flush()
+    return wrapper
+
+
 class S3Snapshot(object):
     CYCLE = 'cycle detected'
     MISSING_PARENT = 'missing parent'
@@ -551,21 +566,6 @@ def parse_args():
                                 help='Force rollback of the filesystem (zfs recv -F).')
     subparsers.add_parser('status', help='show status of current backups')
     return parser.parse_args()
-
-
-class SoftError(Exception):
-    pass
-
-
-def handle_soft_errors(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except SoftError as err:
-            sys.stderr.write(str(err) + os.linesep)
-            sys.stderr.flush()
-    return wrapper
 
 
 @handle_soft_errors
