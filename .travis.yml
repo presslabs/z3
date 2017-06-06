@@ -17,6 +17,6 @@ env:
 matrix:
   include:
     - python: 2.7
-      env: BOTO_VERSION=2.2.2
+      env: BOTO_VERSION=2.38.0
     - python: 2.7
-      env: BOTO_VERSION=2.28.0
+      env: BOTO_VERSION=2.47.0

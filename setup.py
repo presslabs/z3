@@ -7,7 +7,7 @@ setup(
     platforms='any',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["boto==2.28.0"],
+    install_requires=["boto"],
     author="PressLabs SRL",
     author_email="contact@presslabs.com",
     url="https://github.com/presslabs/z3",
