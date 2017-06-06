@@ -270,12 +270,14 @@ class CommandExecutor(object):
 
 
 class PairManager(object):
-    def __init__(self, s3_manager, zfs_manager, command_executor=None, compressor=None):
+    def __init__(self, s3_manager, zfs_manager, command_executor=None, compressor=None,
+                 password_file=None):
         self.s3_manager = s3_manager
         self.zfs_manager = zfs_manager
         self._cmd = command_executor or CommandExecutor()
         self.compressor = compressor
-
+        self.password_file = password_file
+        
     def list(self):
         pairs = []
         seen = set([])
@@ -306,6 +308,22 @@ class PairManager(object):
         except:
             logging.error("failed to parse output '%s'", output)
             raise
+
+    def _encrypt(self, cmd):
+        """Adds the appropriate command to encrypt the zfs stream"""
+        if self.password_file and self.password_file.lower() != "none":
+            encrypt_cmd = "/usr/bin/openssl enc -aes-256-cbc -e -salt -pass file:{}".format(self.password_file)
+            return "{} | {}".format(encrypt_cmd, cmd)
+        else:
+            return cmd
+        
+    def _decrypt(self, cmd):
+        """Adds the appropriate command to decrypt the zfs stream"""
+        if self.password_file and self.password_file.lower() != "none":
+            encrypt_cmd = "/usr/bin/openssl enc -aes-256-cbc -d -salt -pass file:{}".format(self.password_file)
+            return "{} | {}".format(encrypt_cmd, cmd)
+        else:
+            return cmd
 
     def _compress(self, cmd):
         """Adds the appropriate command to compress the zfs stream"""
@@ -346,11 +364,13 @@ class PairManager(object):
                 capture=True))
         self._cmd.pipe(
             "zfs send '{}'".format(z_snap.name),
-            self._compress(
-                self._pput_cmd(
-                    estimated=estimated_size,
-                    s3_prefix=self.s3_manager.s3_prefix,
-                    snap_name=z_snap.name)
+            self._encrypt(
+                self._compress(
+                    self._pput_cmd(
+                        estimated=estimated_size,
+                        s3_prefix=self.s3_manager.s3_prefix,
+                        snap_name=z_snap.name)
+                )
             ),
             dry_run=dry_run,
             estimated_size=estimated_size,
@@ -388,12 +408,14 @@ class PairManager(object):
             self._cmd.pipe(
                 "zfs send -i '{}' '{}'".format(
                     z_snap.parent.name, z_snap.name),
-                self._compress(
-                    self._pput_cmd(
-                        estimated=estimated_size,
-                        parent=z_snap.parent.name,
-                        s3_prefix=self.s3_manager.s3_prefix,
-                        snap_name=z_snap.name)
+                self._encrypt(
+                    self._compress(
+                        self._pput_cmd(
+                            estimated=estimated_size,
+                            parent=z_snap.parent.name,
+                            s3_prefix=self.s3_manager.s3_prefix,
+                            snap_name=z_snap.name)
+                        )
                 ),
                 dry_run=dry_run,
                 estimated_size=estimated_size,
@@ -426,9 +448,11 @@ class PairManager(object):
                 "z3_get {}".format(
                     os.path.join(self.s3_manager.s3_prefix, s3_snap.name)),
                 self._decompress(
-                    cmd="zfs recv {force}{snap}".format(
-                        force=force, snap=s3_snap.name),
-                    s3_snap=s3_snap,
+                    self._decrypt(
+                        cmd="zfs recv {force}{snap}".format(
+                            force=force, snap=s3_snap.name),
+                        s3_snap=s3_snap,
+                        )
                 ),
                 dry_run=dry_run,
                 estimated_size=s3_snap.size,
@@ -491,11 +515,13 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         print(fmt.format(*line))
 
 
-def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry, parseable):
+def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full,
+              snapshot, compressor, dry, parseable,
+              password_file=None):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
-    pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor)
+    pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor, password_file=password_file)
     snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
     if full is True:
         uploaded = pair_manager.backup_full(snap_name=snap_name, dry_run=dry)
@@ -537,6 +563,13 @@ def parse_args():
                         help=('Only operate on snapshots that start with this prefix. '
                               'Defaults to zfs-auto-snap:daily.'))
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
+
+    encrypt_parser = subparsers.add_parser(
+        'encryption', help='Encryption options for backup/restore')
+    encrypt_parser.add_argument("--password-file",
+                         dest='password_file',
+                         default=None,
+                         help=("Specify a password file to use for encryption"))
 
     backup_parser = subparsers.add_parser(
         'backup', help='backup local zfs snapshots to an s3 bucket')
@@ -583,6 +616,14 @@ def main():
         sys.stderr.write("Configuration error! {} is not set.\n".format(err))
         sys.exit(1)
 
+    try:
+        password_file = cfg['PASSWORD_FILE']
+    except KeyError:
+        try:
+            password_file = args.password_file
+        except AttributeError:
+            password_file = None
+            
     bucket = boto.connect_s3(s3_key_id, s3_secret, **extra_config).get_bucket(bucket)
 
     fs_section = "fs:{}".format(args.filesystem)
@@ -603,11 +644,12 @@ def main():
 
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
-                  dry=args.dry, compressor=compressor, parseable=args.parseable)
+                  dry=args.dry, compressor=compressor, parseable=args.parseable,
+                  password_file=password_file)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
-                force=args.force)
+                force=args.force, password_file=password_file)
 
 
 if __name__ == '__main__':
