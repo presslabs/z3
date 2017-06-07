@@ -451,8 +451,8 @@ class PairManager(object):
                     self._decrypt(
                         cmd="zfs recv {force}{snap}".format(
                             force=force, snap=s3_snap.name),
-                        s3_snap=s3_snap,
-                        )
+                        ),
+                    s3_snap=s3_snap,
                 ),
                 dry_run=dry_run,
                 estimated_size=s3_snap.size,
