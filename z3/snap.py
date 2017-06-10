@@ -317,7 +317,7 @@ class PairManager(object):
         else:
             return cmd
         
-    def _decrypt(self, cmd):
+    def _decrypt(self, cmd, s3_snap):
         """Adds the appropriate command to decrypt the zfs stream"""
         if self.password_file and self.password_file.lower() != "none":
             encrypt_cmd = "/usr/bin/openssl enc -aes-256-cbc -d -salt -pass file:{}".format(self.password_file)
@@ -610,8 +610,6 @@ def main():
         s3_key_id, s3_secret, bucket = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
 
         extra_config = {}
-        if 'HOST' in cfg:
-            extra_config['host'] = cfg['HOST']
     except KeyError as err:
         sys.stderr.write("Configuration error! {} is not set.\n".format(err))
         sys.exit(1)
