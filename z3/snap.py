@@ -405,11 +405,17 @@ class PairManager(object):
         current_snap = self.s3_manager.get(snap_name)
         if current_snap is None:
             raise Exception('no such snapshot "{}"'.format(snap_name))
-        if current_snap.key.ongoing_restore == True:
-            raise Exception('snapshot {} is currently being restore from glocier; try again later'.format(snap_name))
-        if current_snap.key.storage_class == "GLACIER":
-            current_snap.key.restore(days=5)
-            raise Exception('snapshot {} is currently in glacier storage, requesting transfer  now'.format(snap_name))
+        try:
+            if current_snap.key.ongoing_restore == True:
+                raise Exception('snapshot {} is currently being restore from glocier; try again later'.format(snap_name))
+            if current_snap.key.storage_class == "GLACIER":
+                current_snap.key.restore(days=5)
+                raise Exception('snapshot {} is currently in glacier storage, requesting transfer  now'.format(snap_name))
+        except AttributeError:
+            # This seems to be if the FakeKey object doesn't have the ongoing_restore attribute
+            pass
+        except:
+            raise
         to_restore = []
         while True:
             z_snap = self.zfs_manager.get(current_snap.name)
