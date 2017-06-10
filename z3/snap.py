@@ -618,7 +618,7 @@ def main():
 
     # See if we have a lifecycle rule for glacier.
     # The rule name will depend on the S3_PREFIX -- if
-    # that's empty, then the rule is just "z3-transition";
+    # that's empty, then the rule is just "z3 transition";
     # otherise, it is "z3 transition ${S3_PREFIX}" (but with
     # '/' converted to ' ').
     lifecycle_rule_name = "z3 transition"
