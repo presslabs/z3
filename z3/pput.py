@@ -329,8 +329,6 @@ def main():
     stream_handler = StreamHandler(input_fd, chunk_size=chunk_size)
 
     extra_config = {}
-    if 'HOST' in CFG:
-        extra_config['host'] = CFG['HOST']
 
     bucket = boto.connect_s3(
         CFG['S3_KEY_ID'], CFG['S3_SECRET'], **extra_config).get_bucket(CFG['BUCKET'])
