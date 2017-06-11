@@ -13,6 +13,15 @@ import boto
 
 from z3.config import get_config
 
+def ValidateCipher(cipher):
+    # See if the given cipher is vaid.
+    if not cipher:
+        return True
+    try:
+        ciphers = subprocess.check_output(["openssl", "list-cipher-commands"]).split()
+        return cipher in ciphers
+    except subprocess.CalledProcessError:
+        return False
 
 def cached(func):
     @functools.wraps(func)
@@ -68,7 +77,7 @@ class S3Snapshot(object):
         self._mgr = manager
         self._reason_broken = None
         self.size = size
-
+        
     def __repr__(self):
         if self.is_full:
             return "<Snapshot {} [full]>".format(self.name)
@@ -124,7 +133,10 @@ class S3Snapshot(object):
     def uncompressed_size(self):
         return self._metadata.get('size')
 
-
+    @property
+    def cipher(self):
+        return self._metadata.get('cipher', None)
+    
 class S3SnapshotManager(object):
     def __init__(self, bucket, s3_prefix, snapshot_prefix):
         self.bucket = bucket
@@ -271,11 +283,12 @@ class CommandExecutor(object):
 
 class PairManager(object):
     def __init__(self, s3_manager, zfs_manager, command_executor=None, compressor=None,
-                 password_file=None):
+                 cipher=None, password_file=None):
         self.s3_manager = s3_manager
         self.zfs_manager = zfs_manager
         self._cmd = command_executor or CommandExecutor()
         self.compressor = compressor
+        self.cipher = cipher
         self.password_file = password_file
         
     def list(self):
@@ -311,16 +324,16 @@ class PairManager(object):
 
     def _encrypt(self, cmd):
         """Adds the appropriate command to encrypt the zfs stream"""
-        if self.password_file and self.password_file.lower() != "none":
-            encrypt_cmd = "/usr/bin/openssl enc -aes-256-cbc -e -salt -pass file:{}".format(self.password_file)
+        if self.cipher:
+            encrypt_cmd = "/usr/bin/openssl enc -{} -e -salt -pass file:{}".format(self.cipher, self.password_file)
             return "{} | {}".format(encrypt_cmd, cmd)
         else:
             return cmd
         
-    def _decrypt(self, cmd):
+    def _decrypt(self, cmd, s3_snap):
         """Adds the appropriate command to decrypt the zfs stream"""
-        if self.password_file and self.password_file.lower() != "none":
-            encrypt_cmd = "/usr/bin/openssl enc -aes-256-cbc -d -salt -pass file:{}".format(self.password_file)
+        if self.cipher:
+            encrypt_cmd = "/usr/bin/openssl enc -{} -d -salt -pass file:{}".format(self.cipher, self.password_file)
             return "{} | {}".format(encrypt_cmd, cmd)
         else:
             return cmd
@@ -351,6 +364,8 @@ class PairManager(object):
             meta.append("parent={}".format(parent))
         if self.compressor is not None:
             meta.append("compressor={}".format(self.compressor))
+        if self.cipher:
+            meta.append("cipher={}".format(self.cipher))
         return "pput --quiet --estimated {estimated} {meta} {prefix}{name}".format(
             estimated=estimated, prefix=s3_prefix, name=snap_name,
             meta=" ".join(("--meta " + m) for m in meta))
@@ -517,11 +532,12 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
 
 def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full,
               snapshot, compressor, dry, parseable,
-              password_file=None):
+              cipher=None, password_file=None):
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
-    pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor, password_file=password_file)
+    pair_manager = PairManager(s3_mgr, zfs_mgr, compressor=compressor,
+                               cipher=cipher, password_file=password_file)
     snap_name = "{}@{}".format(filesystem, snapshot) if snapshot else None
     if full is True:
         uploaded = pair_manager.backup_full(snap_name=snap_name, dry_run=dry)
@@ -564,12 +580,14 @@ def parse_args():
                               'Defaults to zfs-auto-snap:daily.'))
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
-    encrypt_parser = subparsers.add_parser(
-        'encryption', help='Encryption options for backup/restore')
-    encrypt_parser.add_argument("--password-file",
-                         dest='password_file',
-                         default=None,
-                         help=("Specify a password file to use for encryption"))
+    parser.add_argument("--cipher",
+                        dest='cipher',
+                        default=cfg.get('CIPHER', None),
+                        help='Set the encryption cipher')
+    parser.add_argument("--password-file",
+                        dest='password_file',
+                        default=cfg.get("PASSWORD_FILE", None),
+                        help=("Specify a password file to use for encryption"))
 
     backup_parser = subparsers.add_parser(
         'backup', help='backup local zfs snapshots to an s3 bucket')
@@ -610,19 +628,15 @@ def main():
         s3_key_id, s3_secret, bucket = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
 
         extra_config = {}
-        if 'HOST' in cfg:
-            extra_config['host'] = cfg['HOST']
     except KeyError as err:
         sys.stderr.write("Configuration error! {} is not set.\n".format(err))
         sys.exit(1)
 
-    try:
-        password_file = cfg['PASSWORD_FILE']
-    except KeyError:
-        try:
-            password_file = args.password_file
-        except AttributeError:
-            password_file = None
+    if not ValidateCipher(args.cipher):
+        raise AssertionError("Invalid cipher {}".format(args.cipher))
+    if args.cipher and (not args.password_file or args.password_file.lower == "none"):
+        # For now, treat this as an error
+        raise AssertionError("Cannot specify an encryption cipher without a password file")
             
     bucket = boto.connect_s3(s3_key_id, s3_secret, **extra_config).get_bucket(bucket)
 
@@ -645,11 +659,11 @@ def main():
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
                   dry=args.dry, compressor=compressor, parseable=args.parseable,
-                  password_file=password_file)
+                  cipher=args.cipher, password_file=args.password_file)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
-                force=args.force, password_file=password_file)
+                force=args.force)
 
 
 if __name__ == '__main__':
