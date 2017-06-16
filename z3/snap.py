@@ -502,7 +502,6 @@ def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot,
     if dry is False:
         # This will modify the lifecycle rules for the bucket,
         # so we only do it if it's not a dry run.
-        
         glacier_lifecycle(bucket, s3_prefix, use_glacier)
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
@@ -623,7 +622,7 @@ def glacier_lifecycle(bucket, s3_prefix, use_glacier):
             # Okay, we need to add a lifecycle
             if lifecycle is None:
                 lifecycle = boto.s3.lifecycle.Lifecycle()
-            transition=boto.s3.lifecycle.Transition(days=1, storage_class="GLACIER")
+            transition=boto.s3.lifecycle.Transition(days=0, storage_class="GLACIER")
             lifecycle.add_rule(id=lifecycle_rule_name,
                                status="Enabled",
                                prefix=s3_prefix or None,
@@ -657,8 +656,6 @@ def main():
         else:
             raise
         
-    glacier_lifecycle(bucket, args.s3_prefix, args.use_glacier)
-    
     fs_section = "fs:{}".format(args.filesystem)
     if args.snapshot_prefix is None:
         snapshot_prefix = cfg.get("SNAPSHOT_PREFIX", section=fs_section)
@@ -677,7 +674,8 @@ def main():
 
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
-                  dry=args.dry, compressor=compressor, parseable=args.parseable)
+                  dry=args.dry, compressor=compressor, parseable=args.parseable,
+                  use_glacier=args.use_glacier)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
