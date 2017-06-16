@@ -408,7 +408,7 @@ class PairManager(object):
         if dry_run is False:
             if current_snap.key.ongoing_restore == True:
                 raise Exception('snapshot {} is currently being restore from glocier; try again later'.format(snap_name))
-            if current_snap.key.storage_class == "GLACIER":
+            elif current_snap.key.ongoing_restore is None and current_snap.key.storage_class == "GLACIER":
                 current_snap.key.restore(days=5)
                 raise Exception('snapshot {} is currently in glacier storage, requesting transfer  now'.format(snap_name))
         to_restore = []
