@@ -27,7 +27,8 @@ class FakeKey(object):
         self.key = name
         self.metadata = metadata
         self.size = 1234
-
+        self.storage_class = "STORAGE"
+        self.ongoing_restore = False
 
 class FakeBucket(object):
     rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'

@@ -405,17 +405,12 @@ class PairManager(object):
         current_snap = self.s3_manager.get(snap_name)
         if current_snap is None:
             raise Exception('no such snapshot "{}"'.format(snap_name))
-        try:
+        if dry_run is False:
             if current_snap.key.ongoing_restore == True:
                 raise Exception('snapshot {} is currently being restore from glocier; try again later'.format(snap_name))
             if current_snap.key.storage_class == "GLACIER":
                 current_snap.key.restore(days=5)
                 raise Exception('snapshot {} is currently in glacier storage, requesting transfer  now'.format(snap_name))
-        except AttributeError:
-            # This seems to be if the FakeKey object doesn't have the ongoing_restore attribute
-            pass
-        except:
-            raise
         to_restore = []
         while True:
             z_snap = self.zfs_manager.get(current_snap.name)
@@ -502,7 +497,13 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         print(fmt.format(*line))
 
 
-def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry, parseable):
+def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot,
+              compressor, dry, parseable, use_glacier=False):
+    if dry is False:
+        # This will modify the lifecycle rules for the bucket,
+        # so we only do it if it's not a dry run.
+        
+        glacier_lifecycle(bucket, s3_prefix, use_glacier)
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
@@ -590,6 +591,45 @@ def parse_args():
     subparsers.add_parser('status', help='show status of current backups')
     return parser.parse_args()
 
+def glacier_lifecycle(bucket, s3_prefix, use_glacier):
+    try:
+        lifecycle = bucket.get_lifecycle_config()
+    except boto.exception.S3ResponseError:
+        lifecycle = None
+
+    # See if we have a lifecycle rule for glacier.
+    # The rule name will depend on the S3_PREFIX -- if
+    # that's empty, then the rule is just "z3 transition";
+    # otherise, it is "z3 transition ${S3_PREFIX}" (but with
+    # '/' converted to ' ').
+    lifecycle_rule_name = "z3 transition"
+    if s3_prefix:
+        lifecycle_rule_name += " " + s3_prefix.replace("/", " ")
+    lifecycle_rule_name = lifecycle_rule_name.rstrip()
+        
+    rule_index = None
+    for indx, rule in enumerate(lifecycle or []):
+        if rule.id == lifecycle_rule_name:
+            rule_index = indx
+            break
+        
+    if not use_glacier:
+        # If we don't use glacier, we want to remove the lifecycle policy
+        # if it exists
+        if rule_index is not None:
+            lifecycle.pop(rule_index)
+    else:
+        if rule_index is None:
+            # Okay, we need to add a lifecycle
+            if lifecycle is None:
+                lifecycle = boto.s3.lifecycle.Lifecycle()
+            transition=boto.s3.lifecycle.Transition(days=1, storage_class="GLACIER")
+            lifecycle.add_rule(id=lifecycle_rule_name,
+                               status="Enabled",
+                               prefix=s3_prefix or None,
+                               transition=transition)
+    if lifecycle is not None:
+        bucket.configure_lifecycle(lifecycle)
 
 @handle_soft_errors
 def main():
@@ -610,56 +650,15 @@ def main():
     try:
         bucket = s3.get_bucket(bucket_name)
     except boto.exception.S3ResponseError as e:
-        if e.error_code == 'NoSuchBucket':
+        if e.error_code == 'NoSuchBucket' and args.subcommand == 'backup':
             # Let's try creating it
             bucket = s3.create_bucket(bucket_name)
             print("Created bucket {}: {}".format(bucket_name, bucket), file=sys.stderr)
         else:
             raise
         
-    try:
-        lifecycle = bucket.get_lifecycle_config()
-    except boto.exception.S3ResponseError:
-        lifecycle = None
-
-    # See if we have a lifecycle rule for glacier.
-    # The rule name will depend on the S3_PREFIX -- if
-    # that's empty, then the rule is just "z3 transition";
-    # otherise, it is "z3 transition ${S3_PREFIX}" (but with
-    # '/' converted to ' ').
-    lifecycle_rule_name = "z3 transition"
-    if args.s3_prefix:
-        lifecycle_rule_name += " " + args.s3_prefix.replace("/", " ")
-    while lifecycle_rule_name.endswith(" "):
-        lifecycle_rule_name = lifecycle_rule_name[:-1]
-        
-    rule_index = None
-    for indx, rule in enumerate(lifecycle or []):
-        if rule.id == lifecycle_rule_name:
-            rule_index = indx
-            break
-        
-    if not args.use_glacier:
-        # If we don't use glacier, we want to remove the lifecycle policy
-        # if it exists
-        if rule_index is not None:
-            lifecycle.pop(rule_index)
-    else:
-        if rule_index is None:
-            # Okay, we need to add a lifecycle
-            if lifecycle is None:
-                lifecycle = boto.s3.lifecycle.Lifecycle()
-            transition=boto.s3.lifecycle.Transition(days=1, storage_class="GLACIER")
-            print("trasition rule = {}".format(transition), file=sys.stderr)
-            print("prefix = {}".format(args.s3_prefix or None), file=sys.stderr)
-            lifecycle.add_rule(id=lifecycle_rule_name,
-                               status="Enabled",
-                               prefix=args.s3_prefix or None,
-                               transition=transition)
-            print("lifecycle = {}".format(lifecycle.to_xml()), file=sys.stderr)
-    if lifecycle is not None:
-        bucket.configure_lifecycle(lifecycle)
-        
+    glacier_lifecycle(bucket, args.s3_prefix, args.use_glacier)
+    
     fs_section = "fs:{}".format(args.filesystem)
     if args.snapshot_prefix is None:
         snapshot_prefix = cfg.get("SNAPSHOT_PREFIX", section=fs_section)
