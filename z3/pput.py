@@ -332,8 +332,12 @@ def main():
     if 'HOST' in CFG:
         extra_config['host'] = CFG['HOST']
 
-    bucket = boto.connect_s3(
-        CFG['S3_KEY_ID'], CFG['S3_SECRET'], **extra_config).get_bucket(CFG['BUCKET'])
+    if 'S3_KEY_ID' in CFG:
+        bucket = boto.connect_s3(
+            CFG['S3_KEY_ID'], CFG['S3_SECRET'], **extra_config).get_bucket(CFG['BUCKET'])
+    else:
+        bucket = boto.connect_s3(
+            **extra_config).get_bucket(CFG['BUCKET'])
 
     # verbosity: 0 totally silent, 1 default, 2 show progress
     verbosity = 0 if args.quiet else 1 + int(args.progress)
