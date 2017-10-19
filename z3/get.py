@@ -16,7 +16,7 @@ def main():
     args = parser.parse_args()
     config = TransferConfig(max_concurrency=int(cfg['CONCURRENCY']), multipart_chunksize=int(re.sub('M', '', cfg['CHUNK_SIZE'])) * MB)
     if 'S3_KEY_ID' in cfg:
-        s3 = boto3.client('s3'), aws_access_key_id=cfg['S3_KEY_ID'], aws_secret_access_key=cfg['S3_SECRET'])
+        s3 = boto3.client('s3', aws_access_key_id=cfg['S3_KEY_ID'], aws_secret_access_key=cfg['S3_SECRET'])
     else:
         s3 = boto3.client('s3')
     try:
