@@ -1,5 +1,6 @@
 import argparse
-import sys, re
+import sys
+import re
 
 import boto3
 import botocore
@@ -7,6 +8,8 @@ from boto3.s3.transfer import TransferConfig
 from z3.config import get_config
 
 MB = 1024 ** 2
+
+
 def main():
     cfg = get_config()
     parser = argparse.ArgumentParser(
@@ -20,12 +23,13 @@ def main():
     else:
         s3 = boto3.client('s3')
     try:
-        s3.download_fileobj(cfg['BUCKET'], args.name, sys.stdout, Config = config)
+        s3.download_fileobj(cfg['BUCKET'], args.name, sys.stdout, Config=config)
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
             print("The object does not exist.")
         else:
             raise
+
 
 if __name__ == '__main__':
     main()
