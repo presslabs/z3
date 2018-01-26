@@ -1,9 +1,14 @@
-# z3 a ZFS to S3 backup tool
+# z3 [![Build Status](https://travis-ci.org/PressLabs/z3.svg)](https://travis-ci.org/PressLabs/z3)
 
-[![Build Status](https://travis-ci.org/PressLabs/z3.svg)](https://travis-ci.org/PressLabs/z3)
+# Welcome to z3
 
-A ZFS to S3 backup tool. This is basically plumbing around `zfs send` and `zfs receive`
+z3 is a ZFS to S3 backup tool. This is basically plumbing around `zfs send` and `zfs receive`
 so you should have at least a basic understanding of what those commands do.
+
+z3 was developed by the awesome engineering team at [Presslabs](https://www.presslabs.com/), 
+a Managed WordPress Hosting provider.
+
+For more open-source projects, check [Presslabs Code](https://www.presslabs.org/). 
 
 ## Usage
 `z3 status` will show you the current state, what snapshots you have on S3 and on the local
