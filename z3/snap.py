@@ -77,7 +77,8 @@ class S3Snapshot(object):
 
     @property
     def is_full(self):
-        return self._metadata.get('isfull') == 'true'
+        # keep backwards compatibility for underscore metadata
+        return 'true' in [self._metadata.get('is_full'), self._metadata.get('isfull')]
 
     @property
     def parent(self):
