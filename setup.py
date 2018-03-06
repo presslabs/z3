@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="z3",
-    version="0.1.15",
+    version="0.2.0",
     platforms='any',
     packages=find_packages(),
     include_package_data=True,
