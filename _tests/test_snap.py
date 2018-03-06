@@ -33,9 +33,9 @@ class FakeBucket(object):
     rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'
     fake_data = {
         "pool/fs@snap_0": {'parent': 'pool/fs@snap_expired'},
-        "pool/fs@snap_1_f": {'is_full': 'true', 'compressor': 'pigz1'},
+        "pool/fs@snap_1_f": {'isfull': 'true', 'compressor': 'pigz1'},
         "pool/fs@snap_2": {'parent': 'pool/fs@snap_1_f'},
-        "pool/fs@snap_3": {'parent': 'pool/fs@snap_2', 'is_full': 'false'},
+        "pool/fs@snap_3": {'parent': 'pool/fs@snap_2', 'isfull': 'false'},
         "pool/fs@snap_4_mp": {'parent': 'missing_parent'},  # missing parent
         "pool/fs@snap_5": {'parent': 'pool/fs@snap_4_mp'},
         "pool/fs@snap_6_cycle": {'parent': 'pool/fs@snap_7_cycle'},  # cycle
@@ -276,7 +276,7 @@ def test_backup_latest_full(pair_manager):
         "zfs send -nvP 'pool/fs@snap_9'",
         ("zfs send 'pool/fs@snap_9' | "
          "pput --quiet --estimated 1234 --meta size=1234 "
-         "--meta is_full=true {}pool/fs@snap_9")]
+         "--meta isfull=true {}pool/fs@snap_9")]
     assert pair_manager._cmd._called_commands == [
         e.format(FakeBucket.rand_prefix)
         for e in expected]
@@ -288,7 +288,7 @@ def test_backup_full(pair_manager):
         "zfs send -nvP 'pool/fs@snap_3'",
         ("zfs send 'pool/fs@snap_3' | "
          "pput --quiet --estimated 1234 --meta size=1234 "
-         "--meta is_full=true {}pool/fs@snap_3")]
+         "--meta isfull=true {}pool/fs@snap_3")]
     assert pair_manager._cmd._called_commands == [
         e.format(FakeBucket.rand_prefix)
         for e in expected]
@@ -389,7 +389,7 @@ def test_backup_full_compressed(s3_manager):
         "zfs send -nvP 'pool/fs@snap_8'",
         ("zfs send 'pool/fs@snap_8' | "
          "pigz -1 --blocksize 4096 | "
-         "pput --quiet --estimated 1234 --meta size=1234 --meta is_full=true "
+         "pput --quiet --estimated 1234 --meta size=1234 --meta isfull=true "
          "--meta compressor=pigz1 {}pool/fs@snap_8"),
     ]
     expected = [e.format(FakeBucket.rand_prefix) for e in commands]

@@ -144,7 +144,7 @@ since the last time you've performed a backup they get exported as individual sn
 (multiple calls to `zfs send -i dataset@snapA dataset@snapB`).
 
 Your snapshots end up as individual keys in an s3 bucket, with a configurable prefix (`S3_PREFIX`).
-S3 key metadata is used to identify if a snapshot is full (`is_full="true"`) or incremental.
+S3 key metadata is used to identify if a snapshot is full (`isfull="true"`) or incremental.
 The parent of an incremental snapshot is identified with the `parent` attribute.
 
 S3 and ZFS snapshots are matched by name.
