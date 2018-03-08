@@ -63,7 +63,7 @@ def parse_size(size):
 
 
 class StreamHandler(object):
-    def __init__(self, input_stream, chunk_size=5*1024*1024):
+    def __init__(self, input_stream, chunk_size=5 * 1024 * 1024):
         self.input_stream = input_stream
         self.chunk_size = chunk_size
         self._partial_chunk = ""
@@ -92,7 +92,7 @@ def retry(times=int(CFG['MAX_RETRIES'])):
     def decorator(func):
         @functools.wraps(func)
         def wrapped(*a, **kwa):
-            for attempt in xrange(1, times+1):
+            for attempt in xrange(1, times + 1):
                 try:
                     return func(*a, **kwa)
                 except:  # pylint: disable=bare-except
@@ -269,7 +269,7 @@ def optimize_chunksize(estimated):
     max_parts = 9999  # S3 requires part indexes to be between 1 and 10000
     # part size has to be at least 5MB
     estimated = estimated * 1.05  # just to be on the safe side overesimate the total size to upload
-    min_part_size = max(estimated / max_parts, 5*1024*1024)
+    min_part_size = max(estimated / max_parts, 5 * 1024 * 1024)
     return int(min_part_size)
 
 
@@ -278,8 +278,8 @@ def parse_args():
         description='Read data from stdin and upload it to s3',
         epilog=('All optional args have a configurable default. '
                 'Order of precedence is command line args then '
-                'environment variables then user config ~/.z3.cfg'
-                ' then default config.'),
+                'environment variables then user config ~/.z3.cfg '
+                'then default config.'),
     )
     parser.add_argument('name', help='name of S3 key')
     chunk_group = parser.add_mutually_exclusive_group()
@@ -348,7 +348,7 @@ def main():
     )
     if verbosity >= VERB_NORMAL:
         sys.stderr.write("starting upload to {}/{} with chunksize {}M using {} workers\n".format(
-            CFG['BUCKET'], args.name, (chunk_size/(1024*1024.0)), args.concurrency))
+            CFG['BUCKET'], args.name, (chunk_size / (1024 * 1024.0)), args.concurrency))
     try:
         etag = sup.main_loop(concurrency=args.concurrency)
     except UploadException as excp:
