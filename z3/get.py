@@ -17,11 +17,14 @@ def main():
     )
     parser.add_argument('name', help='name of S3 key')
     args = parser.parse_args()
+    extra_config = {}
+    if 'HOST' in cfg:
+        extra_config['endpoint_url'] = cfg['HOST']
     config = TransferConfig(max_concurrency=int(cfg['CONCURRENCY']), multipart_chunksize=int(re.sub('M', '', cfg['CHUNK_SIZE'])) * MB)
     if 'S3_KEY_ID' in cfg:
-        s3 = boto3.client('s3', aws_access_key_id=cfg['S3_KEY_ID'], aws_secret_access_key=cfg['S3_SECRET'])
+        s3 = boto3.client('s3', aws_access_key_id=cfg['S3_KEY_ID'], aws_secret_access_key=cfg['S3_SECRET'], **extra_config)
     else:
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', **extra_config)
     try:
         s3.download_fileobj(cfg['BUCKET'], args.name, sys.stdout, Config=config)
     except botocore.exceptions.ClientError as e:
