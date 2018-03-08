@@ -77,7 +77,8 @@ class S3Snapshot(object):
 
     @property
     def is_full(self):
-        return self._metadata.get('is_full') == 'true'
+        # keep backwards compatibility for underscore metadata
+        return 'true' in [self._metadata.get('is_full'), self._metadata.get('isfull')]
 
     @property
     def parent(self):
@@ -328,7 +329,7 @@ class PairManager(object):
     def _pput_cmd(self, estimated, s3_prefix, snap_name, parent=None):
         meta = ['size={}'.format(estimated)]
         if parent is None:
-            meta.append("is_full=true")
+            meta.append("isfull=true")
         else:
             meta.append("parent={}".format(parent))
         if self.compressor is not None:
