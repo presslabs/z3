@@ -574,17 +574,15 @@ def main():
     cfg = get_config()
     args = parse_args()
 
-    try:
+    extra_config = {}
+    if 'HOST' in cfg:
+        extra_config['host'] = cfg['HOST']
+    if 'S3_KEY_ID' in cfg:
         s3_key_id, s3_secret, bucket = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
-
-        extra_config = {}
-        if 'HOST' in cfg:
-            extra_config['host'] = cfg['HOST']
-    except KeyError as err:
-        sys.stderr.write("Configuration error! {} is not set.\n".format(err))
-        sys.exit(1)
-
-    bucket = boto.connect_s3(s3_key_id, s3_secret, **extra_config).get_bucket(bucket)
+        bucket = boto.connect_s3(s3_key_id, s3_secret, **extra_config).get_bucket(bucket)
+    else:
+        bucket = cfg['BUCKET']
+        bucket = boto.connect_s3( **extra_config).get_bucket(bucket)
 
     fs_section = "fs:{}".format(args.filesystem)
     if args.snapshot_prefix is None:
