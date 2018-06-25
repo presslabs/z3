@@ -62,13 +62,13 @@ class S3Snapshot(object):
     MISSING_PARENT = 'missing parent'
     PARENT_BROKEN = 'parent broken'
 
-    def __init__(self, name, metadata, manager, size):
+    def __init__(self, name, metadata, manager, size, key=None):
         self.name = name
         self._metadata = metadata
         self._mgr = manager
         self._reason_broken = None
         self.size = size
-
+        self.key = key
     def __repr__(self):
         if self.is_full:
             return "<Snapshot {} [full]>".format(self.name)
@@ -141,7 +141,7 @@ class S3SnapshotManager(object):
         for key in self.bucket.list(prefix):
             key = self.bucket.get_key(key.key)
             name = key.key[strip_chars:]
-            snapshots[name] = S3Snapshot(name, metadata=key.metadata, manager=self, size=key.size)
+            snapshots[name] = S3Snapshot(name, metadata=key.metadata, manager=self, size=key.size, key=key)
         return snapshots
 
     def list(self):
@@ -406,6 +406,12 @@ class PairManager(object):
         current_snap = self.s3_manager.get(snap_name)
         if current_snap is None:
             raise Exception('no such snapshot "{}"'.format(snap_name))
+        if dry_run is False:
+            if current_snap.key.ongoing_restore == True:
+                raise Exception('snapshot {} is currently being restore from glocier; try again later'.format(snap_name))
+            elif current_snap.key.ongoing_restore is None and current_snap.key.storage_class == "GLACIER":
+                current_snap.key.restore(days=5)
+                raise Exception('snapshot {} is currently in glacier storage, requesting transfer  now'.format(snap_name))
         to_restore = []
         while True:
             z_snap = self.zfs_manager.get(current_snap.name)
@@ -492,7 +498,12 @@ def list_snapshots(bucket, s3_prefix, filesystem, snapshot_prefix):
         print(fmt.format(*line))
 
 
-def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot, compressor, dry, parseable):
+def do_backup(bucket, s3_prefix, filesystem, snapshot_prefix, full, snapshot,
+              compressor, dry, parseable, use_glacier=False):
+    if dry is False:
+        # This will modify the lifecycle rules for the bucket,
+        # so we only do it if it's not a dry run.
+        glacier_lifecycle(bucket, s3_prefix, use_glacier)
     prefix = "{}@{}".format(filesystem, snapshot_prefix)
     s3_mgr = S3SnapshotManager(bucket, s3_prefix=s3_prefix, snapshot_prefix=prefix)
     zfs_mgr = ZFSSnapshotManager(fs_name=filesystem, snapshot_prefix=snapshot_prefix)
@@ -520,10 +531,16 @@ def restore(bucket, s3_prefix, filesystem, snapshot_prefix, snapshot, dry, force
 
 
 def parse_args():
+    def to_bool(s):
+        if s.lower() in ("yes", "1", "true", "t", "y"):
+            return True
+        return False
+        
     cfg = get_config()
     parser = argparse.ArgumentParser(
         description='list z3 snapshots',
     )
+    parser.register('type', 'bool', to_bool)
     parser.add_argument('--s3-prefix',
                         dest='s3_prefix',
                         default=cfg.get('S3_PREFIX', 'z3-backup/'),
@@ -537,6 +554,12 @@ def parse_args():
                         default=None,
                         help=('Only operate on snapshots that start with this prefix. '
                               'Defaults to zfs-auto-snap:daily.'))
+    parser.add_argument("--use-glacier",
+                        dest='use_glacier',
+                        type=bool,
+                        default=to_bool(cfg.get("USE_GLACIER", "False")),
+                        help='Use glacier for storage')
+    
     subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
     backup_parser = subparsers.add_parser(
@@ -568,6 +591,45 @@ def parse_args():
     subparsers.add_parser('status', help='show status of current backups')
     return parser.parse_args()
 
+def glacier_lifecycle(bucket, s3_prefix, use_glacier):
+    try:
+        lifecycle = bucket.get_lifecycle_config()
+    except boto.exception.S3ResponseError:
+        lifecycle = None
+
+    # See if we have a lifecycle rule for glacier.
+    # The rule name will depend on the S3_PREFIX -- if
+    # that's empty, then the rule is just "z3 transition";
+    # otherise, it is "z3 transition ${S3_PREFIX}" (but with
+    # '/' converted to ' ').
+    lifecycle_rule_name = "z3 transition"
+    if s3_prefix:
+        lifecycle_rule_name += " " + s3_prefix.replace("/", " ")
+    lifecycle_rule_name = lifecycle_rule_name.rstrip()
+        
+    rule_index = None
+    for indx, rule in enumerate(lifecycle or []):
+        if rule.id == lifecycle_rule_name:
+            rule_index = indx
+            break
+        
+    if not use_glacier:
+        # If we don't use glacier, we want to remove the lifecycle policy
+        # if it exists
+        if rule_index is not None:
+            lifecycle.pop(rule_index)
+    else:
+        if rule_index is None:
+            # Okay, we need to add a lifecycle
+            if lifecycle is None:
+                lifecycle = boto.s3.lifecycle.Lifecycle()
+            transition=boto.s3.lifecycle.Transition(days=0, storage_class="GLACIER")
+            lifecycle.add_rule(id=lifecycle_rule_name,
+                               status="Enabled",
+                               prefix=s3_prefix or None,
+                               transition=transition)
+    if lifecycle is not None:
+        bucket.configure_lifecycle(lifecycle)
 
 @handle_soft_errors
 def main():
@@ -575,7 +637,7 @@ def main():
     args = parse_args()
 
     try:
-        s3_key_id, s3_secret, bucket = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
+        s3_key_id, s3_secret, bucket_name = cfg['S3_KEY_ID'], cfg['S3_SECRET'], cfg['BUCKET']
 
         extra_config = {}
         if 'HOST' in cfg:
@@ -584,8 +646,17 @@ def main():
         sys.stderr.write("Configuration error! {} is not set.\n".format(err))
         sys.exit(1)
 
-    bucket = boto.connect_s3(s3_key_id, s3_secret, **extra_config).get_bucket(bucket)
-
+    s3 = boto.connect_s3(s3_key_id, s3_secret, **extra_config)
+    try:
+        bucket = s3.get_bucket(bucket_name)
+    except boto.exception.S3ResponseError as e:
+        if e.error_code == 'NoSuchBucket' and args.subcommand == 'backup':
+            # Let's try creating it
+            bucket = s3.create_bucket(bucket_name)
+            print("Created bucket {}: {}".format(bucket_name, bucket), file=sys.stderr)
+        else:
+            raise
+        
     fs_section = "fs:{}".format(args.filesystem)
     if args.snapshot_prefix is None:
         snapshot_prefix = cfg.get("SNAPSHOT_PREFIX", section=fs_section)
@@ -604,7 +675,8 @@ def main():
 
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,
-                  dry=args.dry, compressor=compressor, parseable=args.parseable)
+                  dry=args.dry, compressor=compressor, parseable=args.parseable,
+                  use_glacier=args.use_glacier)
     elif args.subcommand == 'restore':
         restore(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                 filesystem=args.filesystem, snapshot=args.snapshot, dry=args.dry,
