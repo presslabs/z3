@@ -1,4 +1,4 @@
-# z3 [![Build Status](https://travis-ci.org/PressLabs/z3.svg)](https://travis-ci.org/PressLabs/z3)
+# z3 [![Build Status](https://travis-ci.org/presslabs/z3.svg)](https://travis-ci.org/presslabs/z3)
 
 # Welcome to z3
 
