@@ -36,7 +36,7 @@ COMPRESSORS = {
         'compress': 'pigz -4 --blocksize 4096',
         'decompress': 'pigz -d'},
     'gpg': {
-        'compress': 'gpg -e --cipher-algo AES256 --compress-algo zlib -r z3_backup',
+        'compress': 'gpg -e -r z3_backup',
         'decompress': 'gpg -d'},
 }
 
