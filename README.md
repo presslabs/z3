@@ -8,7 +8,7 @@ so you should have at least a basic understanding of what those commands do.
 z3 was developed by the awesome engineering team at [Presslabs](https://www.presslabs.com/), 
 a Managed WordPress Hosting provider.
 
-For more open-source projects, check [Presslabs Code](https://www.presslabs.org/). 
+For more open-source projects, check [Presslabs Code](https://www.presslabs.com/code/). 
 
 ## Usage
 `z3 status` will show you the current state, what snapshots you have on S3 and on the local
