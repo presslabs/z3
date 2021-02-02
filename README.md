@@ -18,7 +18,7 @@ zfs dataset.
 
 `z3 restore` restores your dataset to a certain snapshot.
 
-See `zfs SUBCOMMAND --help` for more info.
+See `z3 SUBCOMMAND --help` for more info.
 
 ### Installing
 `pip install z3`
