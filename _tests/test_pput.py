@@ -1,4 +1,4 @@
-from io import StringIO
+from io import BytesIO
 from datetime import datetime
 from queue import Queue
 from uuid import uuid4
@@ -39,7 +39,7 @@ def sample_data():
     """
     global _cached_sample_data
     if _cached_sample_data is None:
-        data = StringIO()
+        data = BytesIO()
         chars = "".join(chr(i) for i in range(256))
         for count in range(6):
             cc = chr(count)
@@ -49,7 +49,7 @@ def sample_data():
                 # and an incrementing counter (overflows to 0 several times)
                 # the first block will be: 00 00 00 01 00 02 ... 00 ff 00 00 ... 00 ff
                 data.write(
-                    "".join(cc+chars[i] for i in range(256))
+                    "".join(cc+chars[i] for i in range(256)).encode("latin1")
                 )
         print("wrote {} MB" .format(data.tell() / 1024.0 / 1024.0))
         # give the test a read-only file to avoid accidentally modifying the data between tests
@@ -71,12 +71,12 @@ def test_multipart_etag(sample_data):
 
 
 def test_stream_handler():
-    stream_handler = StreamHandler(StringIO("aabbccdde"), chunk_size=2)
+    stream_handler = StreamHandler(BytesIO(b"aabbccdde"), chunk_size=2)
     chunks = []
     while not stream_handler.finished:
         chunk = stream_handler.get_chunk()
         chunks.append(chunk)
-    assert chunks == ['aa', 'bb', 'cc', 'dd', 'e']
+    assert chunks == [b'aa', b'bb', b'cc', b'dd', b'e']
 
 
 def test_handle_results():
@@ -134,7 +134,7 @@ def test_supervisor_loop(sample_data):
 
 
 def test_zero_data(sample_data):
-    stream_handler = StreamHandler(StringIO())
+    stream_handler = StreamHandler(BytesIO())
     bucket = FakeBucket()
     sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
     with pytest.raises(UploadException):
