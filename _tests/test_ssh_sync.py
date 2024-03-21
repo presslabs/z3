@@ -41,7 +41,7 @@ def test_snapshots_to_send_error(pair, err_msg):
     local, remote = pair
     with pytest.raises(AssertionError) as err:
         snapshots_to_send(local, remote)
-    assert err_msg == err.value.message
+    assert err_msg == str(err.value)
 
 
 PULL_HAPPY_PATH = dict(

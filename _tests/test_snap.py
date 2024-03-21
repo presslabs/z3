@@ -324,7 +324,7 @@ def test_backup_incremental_missing_parent(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.backup_incremental()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_5, reason: 'parent broken'"
     assert fake_cmd._called_commands == []
 
@@ -345,7 +345,7 @@ def test_backup_incremental_cycle(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.backup_incremental()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_7_cycle, reason: 'cycle detected'"
     assert fake_cmd._called_commands == []
 
@@ -456,7 +456,7 @@ def test_restore_broken(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.restore('pool/fs@snap_4_mp')
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_4_mp, reason: 'missing parent'"
 
 
@@ -501,7 +501,7 @@ def test_get_latest():
     fake_cmd = FakeCommandExecutor()
     with pytest.raises(SoftError) as excp_info:
         zfs_manager.get_latest()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         'Nothing to backup for filesystem "None". Are you sure ' \
         'SNAPSHOT_PREFIX="zfs-auto-snap:daily" is correct?'
     assert fake_cmd._called_commands == []
