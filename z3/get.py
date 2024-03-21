@@ -26,7 +26,7 @@ def main():
     else:
         s3 = boto3.client('s3', **extra_config)
     try:
-        s3.download_fileobj(cfg['BUCKET'], args.name, sys.stdout, Config=config)
+        s3.download_fileobj(cfg['BUCKET'], args.name, sys.stdout.buffer, Config=config)
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
             print("The object does not exist.")

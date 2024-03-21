@@ -5,7 +5,7 @@ pput bucket_name/filename
 """
 
 from queue import Queue
-from io import StringIO
+from io import BytesIO
 from collections import namedtuple
 from threading import Thread
 import argparse
@@ -66,7 +66,7 @@ class StreamHandler(object):
     def __init__(self, input_stream, chunk_size=5*1024*1024):
         self.input_stream = input_stream
         self.chunk_size = chunk_size
-        self._partial_chunk = ""
+        self._partial_chunk = b""
         self._eof_reached = False
 
     @property
@@ -82,7 +82,7 @@ class StreamHandler(object):
             self._partial_chunk += read
             if len(self._partial_chunk) == self.chunk_size or self._eof_reached:
                 chunk = self._partial_chunk
-                self._partial_chunk = ""
+                self._partial_chunk = b""
                 return chunk
             # else:
             #     print "partial", len(self._partial_chunk)
@@ -123,7 +123,7 @@ class UploadWorker(object):
         part.id = self.multipart.id
         part.key_name = self.multipart.key_name
         return part.upload_part_from_file(
-            StringIO(chunk), index, replace=True).md5
+            BytesIO(chunk), index, replace=True).md5
 
     def start(self):
         self._thread = Thread(target=self.main_loop)
@@ -321,7 +321,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
+    input_fd = os.fdopen(args.file_descriptor, 'rb') if args.file_descriptor else sys.stdin.buffer
     if args.estimated is not None:
         chunk_size = optimize_chunksize(parse_size(args.estimated))
     else:
