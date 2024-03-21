@@ -1,4 +1,4 @@
-import ConfigParser
+import configparser
 import os
 import os.path
 
@@ -50,7 +50,7 @@ class OnionDict(object):
 def get_config():
     global _settings
     if _settings is None:
-        _config = ConfigParser.ConfigParser()
+        _config = configparser.ConfigParser()
         default = os.path.join(z3.__path__[0], "z3.conf")
         _config.read(default)
         _config.read("/etc/z3_backup/z3.conf")

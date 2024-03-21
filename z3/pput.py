@@ -4,8 +4,8 @@ usage
 pput bucket_name/filename
 """
 
-from Queue import Queue
-from cStringIO import StringIO
+from queue import Queue
+from io import StringIO
 from collections import namedtuple
 from threading import Thread
 import argparse
@@ -47,7 +47,7 @@ def multipart_etag(digests):
 
 
 def parse_size(size):
-    if isinstance(size, (int, long)):
+    if isinstance(size, int):
         return size
     size = size.strip().upper()
     last = size[-1]
@@ -92,7 +92,7 @@ def retry(times=int(CFG['MAX_RETRIES'])):
     def decorator(func):
         @functools.wraps(func)
         def wrapped(*a, **kwa):
-            for attempt in xrange(1, times+1):
+            for attempt in range(1, times+1):
                 try:
                     return func(*a, **kwa)
                 except:  # pylint: disable=bare-except
@@ -179,7 +179,7 @@ class UploadSupervisor(object):
                 inbox=work_queue,
                 outbox=result_queue,
             ).start()
-            for _ in xrange(concurrency)]
+            for _ in range(concurrency)]
         return workers
 
     def _begin_upload(self):
@@ -359,7 +359,7 @@ def main():
         sys.stderr.write("{}\n".format(excp))
         return 1
     if verbosity >= VERB_NORMAL:
-        print json.dumps({'status': 'success', 'etag': etag})
+        print(json.dumps({'status': 'success', 'etag': etag}))
 
 
 if __name__ == '__main__':

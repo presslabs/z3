@@ -1,6 +1,6 @@
-from cStringIO import StringIO
+from io import StringIO
 from datetime import datetime
-from Queue import Queue
+from queue import Queue
 from uuid import uuid4
 import hashlib
 
@@ -40,18 +40,18 @@ def sample_data():
     global _cached_sample_data
     if _cached_sample_data is None:
         data = StringIO()
-        chars = "".join(chr(i) for i in xrange(256))
-        for count in xrange(6):
+        chars = "".join(chr(i) for i in range(256))
+        for count in range(6):
             cc = chr(count)
-            for _ in xrange(2 * 1024):
+            for _ in range(2 * 1024):
                 # each iteration adds 1MB
                 # each 1MB chunk is made up of an alternation of the block's index (zero based)
                 # and an incrementing counter (overflows to 0 several times)
                 # the first block will be: 00 00 00 01 00 02 ... 00 ff 00 00 ... 00 ff
                 data.write(
-                    "".join(cc+chars[i] for i in xrange(256))
+                    "".join(cc+chars[i] for i in range(256))
                 )
-        print "wrote {} MB" .format(data.tell() / 1024.0 / 1024.0)
+        print("wrote {} MB" .format(data.tell() / 1024.0 / 1024.0))
         # give the test a read-only file to avoid accidentally modifying the data between tests
         _cached_sample_data = ReadOnlyFile(data)
     _cached_sample_data.seek(0)
@@ -174,7 +174,7 @@ class Boom(object):
 def test_retry_decorator():
     boom = Boom()
     with pytest.raises(BoomException) as excp_info:
-        for _ in xrange(3):
+        for _ in range(3):
             boom.call()
     assert boom.count == 3
 
