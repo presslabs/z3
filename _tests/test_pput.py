@@ -149,6 +149,7 @@ class ErrorWorker(UploadWorker):
         return hashlib.md5(chunk).hexdigest()
 
 
+@pytest.mark.filterwarnings("ignore:Exception in thread")
 def test_supervisor_loop_with_worker_crash(sample_data):
     stream_handler = StreamHandler(sample_data)
     bucket = FakeBucket()
