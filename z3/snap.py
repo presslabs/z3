@@ -169,7 +169,7 @@ class ZFSSnapshotManager(object):
         # see FakeZFSManager
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
-             'name,used,refer,mountpoint,written'])
+             'name,used,refer,mountpoint,written'], universal_newlines=True)
 
     def _parse_snapshots(self):
         """Returns all snapshots grouped by filesystem, a dict of OrderedDict's
