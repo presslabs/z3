@@ -1,10 +1,12 @@
 language: python
 
 install:
-  - "pip install pytest boto==$BOTO_VERSION"
+  - "pip install pytest boto==$BOTO_VERSION flake8"
   - "python setup.py develop"
 
-script: ./_tests/run_tests.sh
+script:
+  - flake8 .
+  - ./_tests/run_tests.sh
 
 sudo: false
 
