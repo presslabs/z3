@@ -3,3 +3,4 @@
 .cache
 *.egg-info
 *_local.cfg
+venv/
