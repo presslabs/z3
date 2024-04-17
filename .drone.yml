@@ -1,0 +1,33 @@
+---
+kind: pipeline
+name: default
+
+clone:
+  disable: true
+
+workspace:
+  base: /workspace
+  path: src/github.com/presslabs/z3
+
+steps:
+- name: git
+  pull: default
+  image: plugins/git
+  settings:
+    depth: 0
+    tags: true
+
+- name: test
+  image: python:3.9-alpine
+  pull: always
+  commands:
+  - pip install -e .
+  - pip install pytest~=8.1.0 
+  - pytest _tests -k 'not with_s3'
+
+
+---
+kind: signature
+hmac: 652e01c5439861a5ff045ea2e31018814e90e878a3a62ca585b943b93777a4ae
+
+...
