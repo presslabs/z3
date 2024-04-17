@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import argparse
 import functools
 import logging
@@ -148,7 +146,7 @@ class S3SnapshotManager(object):
         return snapshots
 
     def list(self):
-        return sorted(self._snapshots.values(), key=operator.attrgetter('name'))
+        return sorted(list(self._snapshots.values()), key=operator.attrgetter('name'))
 
     def get(self, name):
         return self._snapshots.get(name)
@@ -174,7 +172,7 @@ class ZFSSnapshotManager(object):
         # see FakeZFSManager
         return subprocess.check_output(
             ['zfs', 'list', '-Ht', 'snap', '-o',
-             'name,used,refer,mountpoint,written'])
+             'name,used,refer,mountpoint,written'], universal_newlines=True)
 
     def _parse_snapshots(self):
         """Returns all snapshots grouped by filesystem, a dict of OrderedDict's
@@ -209,7 +207,7 @@ class ZFSSnapshotManager(object):
         # for fs_name, fs_snaps in self._parse_snapshots().iteritems():
         fs_snaps = self._parse_snapshots().get(fs_name, {})
         parent = None
-        for snap_name, data in fs_snaps.iteritems():
+        for snap_name, data in fs_snaps.items():
             if not snap_name.startswith(self._snapshot_prefix):
                 continue
             full_name = '{}@{}'.format(fs_name, snap_name)
@@ -229,7 +227,7 @@ class ZFSSnapshotManager(object):
         return self._build_snapshots(self._fs_name)
 
     def list(self):
-        return self._snapshots.values()
+        return list(self._snapshots.values())
 
     def get_latest(self):
         if len(self._snapshots) == 0:
@@ -238,7 +236,7 @@ class ZFSSnapshotManager(object):
                 'Nothing to backup for filesystem "{}". Are you sure '
                 'SNAPSHOT_PREFIX="{}" is correct?'.format(
                     cfg.get('FILESYSTEM'), cfg.get('SNAPSHOT_PREFIX')))
-        return self._snapshots.values()[-1]
+        return list(self._snapshots.values())[-1]
 
     def get(self, name):
         return self._snapshots.get(name)

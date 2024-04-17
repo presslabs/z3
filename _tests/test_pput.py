@@ -1,6 +1,6 @@
-from cStringIO import StringIO
+from io import BytesIO
 from datetime import datetime
-from Queue import Queue
+from queue import Queue
 from uuid import uuid4
 import hashlib
 
@@ -39,19 +39,19 @@ def sample_data():
     """
     global _cached_sample_data
     if _cached_sample_data is None:
-        data = StringIO()
-        chars = "".join(chr(i) for i in xrange(256))
-        for count in xrange(6):
+        data = BytesIO()
+        chars = "".join(chr(i) for i in range(256))
+        for count in range(6):
             cc = chr(count)
-            for _ in xrange(2 * 1024):
+            for _ in range(2 * 1024):
                 # each iteration adds 1MB
                 # each 1MB chunk is made up of an alternation of the block's index (zero based)
                 # and an incrementing counter (overflows to 0 several times)
                 # the first block will be: 00 00 00 01 00 02 ... 00 ff 00 00 ... 00 ff
                 data.write(
-                    "".join(cc+chars[i] for i in xrange(256))
+                    "".join(cc+chars[i] for i in range(256)).encode("latin1")
                 )
-        print "wrote {} MB" .format(data.tell() / 1024.0 / 1024.0)
+        print("wrote {} MB" .format(data.tell() / 1024.0 / 1024.0))
         # give the test a read-only file to avoid accidentally modifying the data between tests
         _cached_sample_data = ReadOnlyFile(data)
     _cached_sample_data.seek(0)
@@ -71,12 +71,12 @@ def test_multipart_etag(sample_data):
 
 
 def test_stream_handler():
-    stream_handler = StreamHandler(StringIO("aabbccdde"), chunk_size=2)
+    stream_handler = StreamHandler(BytesIO(b"aabbccdde"), chunk_size=2)
     chunks = []
     while not stream_handler.finished:
         chunk = stream_handler.get_chunk()
         chunks.append(chunk)
-    assert chunks == ['aa', 'bb', 'cc', 'dd', 'e']
+    assert chunks == [b'aa', b'bb', b'cc', b'dd', b'e']
 
 
 def test_handle_results():
@@ -134,7 +134,7 @@ def test_supervisor_loop(sample_data):
 
 
 def test_zero_data(sample_data):
-    stream_handler = StreamHandler(StringIO())
+    stream_handler = StreamHandler(BytesIO())
     bucket = FakeBucket()
     sup = UploadSupervisor(stream_handler, 'test', bucket=bucket)
     with pytest.raises(UploadException):
@@ -149,6 +149,7 @@ class ErrorWorker(UploadWorker):
         return hashlib.md5(chunk).hexdigest()
 
 
+@pytest.mark.filterwarnings("ignore:Exception in thread")
 def test_supervisor_loop_with_worker_crash(sample_data):
     stream_handler = StreamHandler(sample_data)
     bucket = FakeBucket()
@@ -174,7 +175,7 @@ class Boom(object):
 def test_retry_decorator():
     boom = Boom()
     with pytest.raises(BoomException) as excp_info:
-        for _ in xrange(3):
+        for _ in range(3):
             boom.call()
     assert boom.count == 3
 

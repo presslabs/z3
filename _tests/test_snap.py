@@ -1,6 +1,6 @@
 # pylint: disable=redefined-outer-name,protected-access
 from collections import OrderedDict
-from cStringIO import StringIO
+from io import StringIO
 import contextlib
 import string
 import sys
@@ -30,7 +30,7 @@ class FakeKey(object):
 
 
 class FakeBucket(object):
-    rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in xrange(8)]) + '/'
+    rand_prefix = 'test-' + ''.join([random.choice(string.ascii_letters) for _ in range(8)]) + '/'
     fake_data = {
         "pool/fs@snap_0": {'parent': 'pool/fs@snap_expired'},
         "pool/fs@snap_1_f": {'isfull': 'true', 'compressor': 'pigz1'},
@@ -44,7 +44,7 @@ class FakeBucket(object):
 
     def list(self, *a, **kwa):
         # boto bucket.list gives you keys without metadata, let's emulate that
-        return (FakeKey(os.path.join(self.rand_prefix, name)) for name in self.fake_data.iterkeys())
+        return (FakeKey(os.path.join(self.rand_prefix, name)) for name in self.fake_data.keys())
 
     def get_key(self, key):
         name = key[len(self.rand_prefix):]
@@ -60,9 +60,9 @@ def write_s3_data():
     cfg = get_config()
     bucket = boto.connect_s3(
         cfg['S3_KEY_ID'], cfg['S3_SECRET']).get_bucket(cfg['BUCKET'])
-    for name, metadata in FakeBucket.fake_data.iteritems():
+    for name, metadata in FakeBucket.fake_data.items():
         key = bucket.new_key(os.path.join(FakeBucket.rand_prefix, name))
-        headers = {("x-amz-meta-" + k): v for k, v in metadata.iteritems()}
+        headers = {("x-amz-meta-" + k): v for k, v in metadata.items()}
         key.set_contents_from_string("spam", headers=headers)
     return bucket
 
@@ -204,8 +204,8 @@ def test_list_local_snapshots():
     }
     snapshots = zfs._parse_snapshots()
     # comparing .items() because we care about the sorting in the OrderedDict's
-    assert snapshots['pool'].items() == expected['pool'].items()
-    assert snapshots['pool/fs'].items() == expected['pool/fs'].items()
+    assert list(snapshots['pool'].items()) == list(expected['pool'].items())
+    assert list(snapshots['pool/fs'].items()) == list(expected['pool/fs'].items())
 
 
 @pytest.mark.parametrize("fs_name, expected", [
@@ -324,7 +324,7 @@ def test_backup_incremental_missing_parent(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.backup_incremental()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_5, reason: 'parent broken'"
     assert fake_cmd._called_commands == []
 
@@ -345,7 +345,7 @@ def test_backup_incremental_cycle(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.backup_incremental()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_7_cycle, reason: 'cycle detected'"
     assert fake_cmd._called_commands == []
 
@@ -456,7 +456,7 @@ def test_restore_broken(s3_manager):
     pair_manager = PairManager(s3_manager, zfs_manager, command_executor=fake_cmd)
     with pytest.raises(IntegrityError) as excp_info:
         pair_manager.restore('pool/fs@snap_4_mp')
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         "Broken snapshot detected pool/fs@snap_4_mp, reason: 'missing parent'"
 
 
@@ -501,7 +501,7 @@ def test_get_latest():
     fake_cmd = FakeCommandExecutor()
     with pytest.raises(SoftError) as excp_info:
         zfs_manager.get_latest()
-    assert excp_info.value.message == \
+    assert str(excp_info.value) == \
         'Nothing to backup for filesystem "None". Are you sure ' \
         'SNAPSHOT_PREFIX="zfs-auto-snap:daily" is correct?'
     assert fake_cmd._called_commands == []

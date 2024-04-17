@@ -22,7 +22,7 @@ HAPPY_PATH = dict(
 )
 
 
-@pytest.mark.parametrize("pair, expected", HAPPY_PATH.values(), ids=HAPPY_PATH.keys())
+@pytest.mark.parametrize("pair, expected", list(HAPPY_PATH.values()), ids=list(HAPPY_PATH.keys()))
 def test_snapshots_to_send(pair, expected):
     local, remote = pair
     assert snapshots_to_send(local, remote) == expected
@@ -36,12 +36,12 @@ ERRORS = dict(
 )
 
 
-@pytest.mark.parametrize('pair, err_msg', ERRORS.values(), ids=ERRORS.keys())
+@pytest.mark.parametrize('pair, err_msg', list(ERRORS.values()), ids=list(ERRORS.keys()))
 def test_snapshots_to_send_error(pair, err_msg):
     local, remote = pair
     with pytest.raises(AssertionError) as err:
         snapshots_to_send(local, remote)
-    assert err_msg == err.value.message
+    assert err_msg == str(err.value)
 
 
 PULL_HAPPY_PATH = dict(
@@ -59,7 +59,7 @@ PULL_HAPPY_PATH = dict(
 )
 
 
-@pytest.mark.parametrize('pair, expected', PULL_HAPPY_PATH.values(), ids=PULL_HAPPY_PATH.keys())
+@pytest.mark.parametrize('pair, expected', list(PULL_HAPPY_PATH.values()), ids=list(PULL_HAPPY_PATH.keys()))
 def test_pull_command(pair, expected):
     commands = sync_snapshots(
         pair,
@@ -87,7 +87,7 @@ PUSH_HAPPY_PATH = dict(
 )
 
 
-@pytest.mark.parametrize('pair, expected', PUSH_HAPPY_PATH.values(), ids=PUSH_HAPPY_PATH.keys())
+@pytest.mark.parametrize('pair, expected', list(PUSH_HAPPY_PATH.values()), ids=list(PUSH_HAPPY_PATH.keys()))
 def test_push_command(pair, expected):
     commands = sync_snapshots(
         pair,

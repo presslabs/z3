@@ -4,8 +4,8 @@ usage
 pput bucket_name/filename
 """
 
-from Queue import Queue
-from cStringIO import StringIO
+from queue import Queue
+from io import BytesIO
 from collections import namedtuple
 from threading import Thread
 import argparse
@@ -47,7 +47,7 @@ def multipart_etag(digests):
 
 
 def parse_size(size):
-    if isinstance(size, (int, long)):
+    if isinstance(size, int):
         return size
     size = size.strip().upper()
     last = size[-1]
@@ -66,7 +66,7 @@ class StreamHandler(object):
     def __init__(self, input_stream, chunk_size=5*1024*1024):
         self.input_stream = input_stream
         self.chunk_size = chunk_size
-        self._partial_chunk = ""
+        self._partial_chunk = b""
         self._eof_reached = False
 
     @property
@@ -82,7 +82,7 @@ class StreamHandler(object):
             self._partial_chunk += read
             if len(self._partial_chunk) == self.chunk_size or self._eof_reached:
                 chunk = self._partial_chunk
-                self._partial_chunk = ""
+                self._partial_chunk = b""
                 return chunk
             # else:
             #     print "partial", len(self._partial_chunk)
@@ -92,7 +92,7 @@ def retry(times=int(CFG['MAX_RETRIES'])):
     def decorator(func):
         @functools.wraps(func)
         def wrapped(*a, **kwa):
-            for attempt in xrange(1, times+1):
+            for attempt in range(1, times+1):
                 try:
                     return func(*a, **kwa)
                 except:  # pylint: disable=bare-except
@@ -123,7 +123,7 @@ class UploadWorker(object):
         part.id = self.multipart.id
         part.key_name = self.multipart.key_name
         return part.upload_part_from_file(
-            StringIO(chunk), index, replace=True).md5
+            BytesIO(chunk), index, replace=True).md5
 
     def start(self):
         self._thread = Thread(target=self.main_loop)
@@ -179,7 +179,7 @@ class UploadSupervisor(object):
                 inbox=work_queue,
                 outbox=result_queue,
             ).start()
-            for _ in xrange(concurrency)]
+            for _ in range(concurrency)]
         return workers
 
     def _begin_upload(self):
@@ -321,7 +321,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    input_fd = os.fdopen(args.file_descriptor, 'r') if args.file_descriptor else sys.stdin
+    input_fd = os.fdopen(args.file_descriptor, 'rb') if args.file_descriptor else sys.stdin.buffer
     if args.estimated is not None:
         chunk_size = optimize_chunksize(parse_size(args.estimated))
     else:
@@ -359,7 +359,7 @@ def main():
         sys.stderr.write("{}\n".format(excp))
         return 1
     if verbosity >= VERB_NORMAL:
-        print json.dumps({'status': 'success', 'etag': etag})
+        print(json.dumps({'status': 'success', 'etag': etag}))
 
 
 if __name__ == '__main__':
