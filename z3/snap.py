@@ -35,6 +35,9 @@ COMPRESSORS = {
     'pigz4': {
         'compress': 'pigz -4 --blocksize 4096',
         'decompress': 'pigz -d'},
+    'gpg': {
+        'compress': 'gpg -e -r {}',
+        'decompress': 'gpg -d'},
 }
 
 
@@ -549,6 +552,11 @@ def parse_args():
                                choices=(['none'] + sorted(COMPRESSORS.keys())),
                                help=('Specify the compressor. Defaults to pigz1. '
                                      'Use "none" to disable.'))
+    backup_parser.add_argument('--gpg-recipient',
+                               dest='gpg_recipient',
+                               default=cfg.get('GPG_RECIPIENT', 'z3_backup'),
+                               help=('The gpg public key to use for encryption.'
+                                     ' Defaults to z3_backup.'))
     backup_parser.add_argument('--parseable', dest='parseable', action='store_true',
                                help='Machine readable output')
     incremental_group = backup_parser.add_mutually_exclusive_group()
@@ -599,6 +607,11 @@ def main():
             compressor = args.compressor
         if compressor.lower() == 'none':
             compressor = None
+        if compressor == 'gpg':
+            compressor_dict = COMPRESSORS.get(compressor)
+            if compressor_dict is not None:
+                compress_cmd = compressor_dict['compress'].format(args.gpg_recipient)
+                compressor_dict['compress'] = compress_cmd
 
         do_backup(bucket, s3_prefix=args.s3_prefix, snapshot_prefix=snapshot_prefix,
                   filesystem=args.filesystem, full=args.full, snapshot=args.snapshot,

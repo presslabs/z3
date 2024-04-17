@@ -32,6 +32,9 @@ apt-get install pv
 
 # Install pigz to provide the pigz compressors.
 apt-get install pigz
+
+# Install gnupg to provide public-key encryption and compression with gpg.
+apt-get install gnupg gnupg-agent
 ```
 
 ### Configuring
@@ -108,6 +111,35 @@ z3 restore the-part-after-the-at-sign
 
 # force rollback of filesystem (zfs recv -F)
 z3 restore the-part-after-the-at-sign --force
+```
+
+### Encryption
+Encryption of stored objects in S3 is normally provided through AWS Key Management Service (KMS). Alternatively, you can use gnupg for public-key encryption by specifying gpg as a `COMPRESSOR` and the public key to use as `GPG_RECIPIENT`. Note: compression and crypto algorithms used by gpg are derived from the public key preferences for `GPG_RECIPIENT`. Here is a usage example:
+```
+# inspect the key preferences for z3_backup
+#   based on preference order, gpg will use AES256 cipher, and ZLIB compression
+gpg --edit-key z3_backup
+
+gpg> showpref
+[ultimate] (1). z3_backup
+     Cipher: AES256, AES192, AES, 3DES
+     Digest: SHA256, SHA384, SHA512, SHA224, SHA1
+     Compression: ZLIB, BZIP2, ZIP, Uncompressed
+     Features: MDC, Keyserver no-modify
+
+gpg> quit
+
+# the following assumes that you have z3_backup in your gnupg public-key ring
+# perform incremental backup the latest snapshot; use gpg compressor
+z3 backup --compressor gpg --gpg-recipient z3_backup --dry-run
+# after inspectng the commands that would be executed, perform the backup
+z3 backup --compressor gpg --gpg-recipient z3_backup
+
+# the following assumes that you have z3_backup in your gnupg private-key ring
+# restore a dataset to a certain snapshot
+z3 restore the-part-after-the-at-sign --dry-run
+# after inspectng the commands that would be executed, perform the restore
+z3 restore the-part-after-the-at-sign
 ```
 
 ### Other Commands
